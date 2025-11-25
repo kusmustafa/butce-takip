@@ -40,7 +40,6 @@ def verileri_kontrol_et_ve_yukle():
         ]
         pd.DataFrame(varsayilanlar).to_csv(KATEGORI_DOSYASI, index=False)
     else:
-        # Dosya var ama sütunlar eksik mi?
         try:
             df = pd.read_csv(KATEGORI_DOSYASI)
             kaydet = False
@@ -51,10 +50,9 @@ def verileri_kontrol_et_ve_yukle():
                     kaydet = True
             if kaydet: df.to_csv(KATEGORI_DOSYASI, index=False)
         except:
-            # Dosya bozuksa yeniden oluştur
             pd.DataFrame(columns=gerekli_kat_sutunlar).to_csv(KATEGORI_DOSYASI, index=False)
 
-    # 2. ESKİ SİSTEMDEN GEÇİŞ (Varsa Temizle)
+    # 2. ESKİ SİSTEMDEN GEÇİŞ
     if os.path.exists(ESKI_SABITLER_DOSYASI):
         try:
             df_eski = pd.read_csv(ESKI_SABITLER_DOSYASI)
@@ -68,7 +66,7 @@ def verileri_kontrol_et_ve_yukle():
             os.rename(ESKI_SABITLER_DOSYASI, "sabit_giderler_yedek.bak")
         except: pass
 
-    # 3. ANA VERİ DOSYASI KONTROLÜ (En Kritik Yer)
+    # 3. ANA VERİ DOSYASI KONTROLÜ
     gerekli_veri_sutunlar = ["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama"]
     
     if not os.path.exists(VERI_DOSYASI):
@@ -78,30 +76,20 @@ def verileri_kontrol_et_ve_yukle():
     else:
         try:
             df = pd.read_csv(VERI_DOSYASI)
-            # Sütun isimleri uyuşuyor mu?
             mevcut_sutunlar = df.columns.tolist()
             eksik_var_mi = False
             
-            # Kritik sütun kontrolü
             if "Tür" not in mevcut_sutunlar: 
-                # Belki eski dosyada 'Tur' yazıyordur veya hiç yoktur
-                if "Tur" in mevcut_sutunlar:
-                    df.rename(columns={"Tur": "Tür"}, inplace=True)
-                else:
-                    df["Tür"] = "Gider" # Varsayılan ata
+                if "Tur" in mevcut_sutunlar: df.rename(columns={"Tur": "Tür"}, inplace=True)
+                else: df["Tür"] = "Gider"
                 eksik_var_mi = True
                 
             if "Son Ödeme Tarihi" not in mevcut_sutunlar:
-                df["Son Ödeme Tarihi"] = None
-                eksik_var_mi = True
+                df["Son Ödeme Tarihi"] = None; eksik_var_mi = True
 
-            # Eğer kritik hata varsa dosyayı güncelle
-            if eksik_var_mi:
-                df.to_csv(VERI_DOSYASI, index=False)
-                
+            if eksik_var_mi: df.to_csv(VERI_DOSYASI, index=False)
             return df
-        except Exception as e:
-            # Dosya okunamayacak kadar bozuksa boş dön
+        except:
             return pd.DataFrame(columns=gerekli_veri_sutunlar)
 
 def dosya_kaydet(df, yol): df.to_csv(yol, index=False)
@@ -123,32 +111,24 @@ def tarih_onerisi_hesapla(gun):
 
 # --- UYGULAMA BAŞLANGICI ---
 df = verileri_kontrol_et_ve_yukle()
-try:
-    df_kat = pd.read_csv(KATEGORI_DOSYASI)
-except:
-    df_kat = pd.DataFrame(columns=["Kategori", "Tur", "VarsayilanGun"])
+try: df_kat = pd.read_csv(KATEGORI_DOSYASI)
+except: df_kat = pd.DataFrame(columns=["Kategori", "Tur", "VarsayilanGun"])
 
-# Tarih formatını güvenli çevirme
 if not df.empty and "Tarih" in df.columns:
-    df["Tarih"] = pd.to_datetime(df["Tarih"], errors='coerce') # Hatalı tarihleri NaT yapar
-    df = df.dropna(subset=["Tarih"]) # Tarihi bozuk olanları listeden çıkarır (Çökmemesi için)
+    df["Tarih"] = pd.to_datetime(df["Tarih"], errors='coerce')
+    df = df.dropna(subset=["Tarih"])
 
 # --- YAN MENÜ ---
 with st.sidebar:
     st.header("⚙️ Ayarlar")
-    
-    # ACİL DURUM BUTONU
-    with st.expander("🚨 Sorun Giderici (Hata Varsa)"):
-        st.warning("Eğer 'KeyError' alıyorsanız buna basın. Verileri sıfırlar.")
-        if st.button("Tüm Verileri Sıfırla ve Onar"):
+    with st.expander("🚨 Sorun Giderici"):
+        st.warning("Veriler bozulursa sıfırlamak için:")
+        if st.button("Tüm Verileri Sıfırla"):
             if os.path.exists(VERI_DOSYASI): os.remove(VERI_DOSYASI)
             if os.path.exists(KATEGORI_DOSYASI): os.remove(KATEGORI_DOSYASI)
-            st.success("Sıfırlandı. Sayfayı yenileyin.")
             st.rerun()
 
     st.divider()
-    
-    # FİLTRELEME
     st.subheader("🔍 Filtre")
     if not df.empty:
         yil_listesi = sorted(df["Tarih"].dt.year.unique(), reverse=True)
@@ -156,8 +136,7 @@ with st.sidebar:
         secilen_yil = st.selectbox("Dönem", secenekler)
         
         if secilen_yil == "Tüm Zamanlar":
-            df_filt = df
-            baslik = "Tüm Zamanlar"
+            df_filt = df; baslik = "Tüm Zamanlar"
         else:
             df_filt = df[df["Tarih"].dt.year == secilen_yil]
             ay_map = {i: ay for i, ay in enumerate(["Yılın Tamamı", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"])}
@@ -167,11 +146,9 @@ with st.sidebar:
             if secilen_ay_index != 0:
                 df_filt = df_filt[df_filt["Tarih"].dt.month == secilen_ay_index]
                 baslik = f"{ay_map[secilen_ay_index]} {secilen_yil}"
-            else:
-                baslik = f"{secilen_yil} Tamamı"
+            else: baslik = f"{secilen_yil} Tamamı"
     else:
-        df_filt = df
-        baslik = "Veri Yok"
+        df_filt = df; baslik = "Veri Yok"
 
     st.divider()
     with st.expander("Kategori Ekle"):
@@ -191,19 +168,15 @@ st.caption(f"Rapor: **{baslik}**")
 
 try:
     if not df_filt.empty:
-        # KeyError buradaydı, artık güvenli
         gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
         gider = df_filt[df_filt["Tür"] == "Gider"]["Tutar"].sum()
         net = gelir - gider
-        
         k1, k2, k3 = st.columns(3)
         k1.metric("Gelir", f"{gelir:,.0f} ₺")
         k2.metric("Gider", f"{gider:,.0f} ₺")
         k3.metric("Net", f"{net:,.0f} ₺", delta_color="normal" if net > 0 else "inverse")
-    else:
-        st.info("Kayıt yok.")
-except Exception as e:
-    st.error(f"Bir hata oluştu: {e}. Lütfen sol menüden 'Sorun Giderici'yi kullanın.")
+    else: st.info("Kayıt yok.")
+except: st.error("Hesaplama hatası.")
 
 st.divider()
 
@@ -213,6 +186,10 @@ col_sol, col_sag = st.columns([1, 1.3])
 with col_sol:
     st.subheader("📝 İşlem")
     with st.container(border=True):
+        # 1. TARİH SEÇİMİ (YENİ EKLENDİ)
+        giris_tarihi = st.date_input("İşlem Tarihi", date.today())
+        
+        # 2. TÜR VE KATEGORİ
         c_tur1, c_tur2 = st.columns(2)
         with c_tur1:
             tur_secimi = st.radio("Tür", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
@@ -222,6 +199,7 @@ with col_sol:
         tutar = st.number_input("Tutar", min_value=0.0, step=50.0)
         aciklama = st.text_input("Açıklama")
         
+        # 3. DETAYLAR (GİDER İÇİN)
         varsayilan_gun = 0
         son_odeme = None
         if secilen_kat and not df_kat.empty:
@@ -230,27 +208,26 @@ with col_sol:
             
         if tur_secimi == "Gider" and varsayilan_gun > 0:
             oneri = tarih_onerisi_hesapla(varsayilan_gun)
-            st.caption(f"📅 Gün: {varsayilan_gun}")
-            son_odeme = st.date_input("Son Ödeme", value=oneri)
+            st.caption(f"📅 Sabit Gün: {varsayilan_gun}")
+            son_odeme = st.date_input("Son Ödeme (Fatura/Kart)", value=oneri)
         elif tur_secimi == "Gider":
-             son_odeme = st.date_input("Son Ödeme", value=None)
+             son_odeme = st.date_input("Son Ödeme (Fatura/Kart)", value=None)
 
         if st.button("KAYDET", type="primary", use_container_width=True):
             if secilen_kat:
                 yeni_satir = pd.DataFrame({
-                    "Tarih": [date.today()],
+                    "Tarih": [giris_tarihi], # BURASI ARTIK SEÇİLEN TARİHİ ALIYOR
                     "Kategori": [secilen_kat],
                     "Tür": [tur_secimi],
                     "Tutar": [tutar],
                     "Son Ödeme Tarihi": [son_odeme],
                     "Açıklama": [aciklama]
                 })
-                # Sütun sırasını garantiye al
                 yeni_satir = yeni_satir[["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama"]]
                 
                 df = pd.concat([df, yeni_satir], ignore_index=True)
                 dosya_kaydet(df, VERI_DOSYASI)
-                st.success("Kaydedildi!")
+                st.success(f"{giris_tarihi.strftime('%d.%m.%Y')} tarihine kaydedildi!")
                 st.rerun()
             else:
                 st.error("Kategori seçiniz.")
@@ -269,16 +246,15 @@ with col_sag:
             st.bar_chart(grp, x="Kategori", y="Tutar", height=200)
 
     with tab_liste:
-        st.dataframe(df_filt.sort_values("Tarih", ascending=False), use_container_width=True, height=450, hide_index=True)
+        # Tarih formatını güzelleştirerek gösterelim
+        gosterim_df = df_filt.sort_values("Tarih", ascending=False).copy()
+        gosterim_df["Tarih"] = gosterim_df["Tarih"].dt.strftime('%d-%m-%Y')
         
-        c_del1, c_del2 = st.columns([3, 1])
-        with c_del1:
-            # Silme işlemi için ID güvenliği
-            try:
-                sil_id = st.selectbox("Silinecek", df_filt.index, format_func=lambda x: f"{df.loc[x,'Tutar']}₺ - {df.loc[x,'Kategori']}", label_visibility="collapsed")
-            except:
-                sil_id = None
-        with c_del2:
-            if st.button("Sil") and sil_id is not None:
+        st.dataframe(gosterim_df, use_container_width=True, height=450, hide_index=True)
+        
+        try:
+            sil_id = st.selectbox("Silinecek", df_filt.index, format_func=lambda x: f"{df.loc[x,'Tarih'].strftime('%d-%m')} | {df.loc[x,'Tutar']}₺ - {df.loc[x,'Kategori']}", label_visibility="collapsed")
+            if st.button("Sil"):
                 df = df.drop(sil_id).reset_index(drop=True)
                 dosya_kaydet(df, VERI_DOSYASI); st.rerun()
+        except: pass
