@@ -8,43 +8,68 @@ import calendar
 # --- AYARLAR ---
 VERI_DOSYASI = 'aile_butcesi.csv'
 KATEGORI_DOSYASI = 'kategoriler.csv'
-SABITLER_DOSYASI = 'sabit_giderler.csv'
+# Eski dosya ismini sadece veri kurtarmak için tutuyoruz
+ESKI_SABITLER_DOSYASI = 'sabit_giderler.csv'
 
 # --- DOSYA VE VERİ YÖNETİMİ ---
-def dosya_kontrol_ve_yukle():
-    """Dosya yapılarını kontrol eder ve eksik sütunları günceller (Migration)."""
+def sistem_kontrol_ve_goc():
+    """Dosya yapılarını kontrol eder, eski ayrı yapıyı tek çatı altında birleştirir."""
     
-    # 1. KATEGORİ DOSYASI GÜNCELLEME (Artık 'Tur' sütunu da var)
+    # 1. KATEGORİ DOSYASI OLUŞTURMA / GÜNCELLEME
     if not os.path.exists(KATEGORI_DOSYASI):
+        # Dosya hiç yoksa varsayılanları oluştur
         varsayilanlar = [
-            {"Kategori": "Maaş", "Tur": "Gelir"},
-            {"Kategori": "Ek Gelir", "Tur": "Gelir"},
-            {"Kategori": "Market", "Tur": "Gider"},
-            {"Kategori": "Kira", "Tur": "Gider"},
-            {"Kategori": "Faturalar", "Tur": "Gider"},
-            {"Kategori": "Eğlence", "Tur": "Gider"},
-            {"Kategori": "Ulaşım", "Tur": "Gider"}
+            {"Kategori": "Maaş", "Tur": "Gelir", "VarsayilanGun": 0},
+            {"Kategori": "Kira", "Tur": "Gider", "VarsayilanGun": 1},
+            {"Kategori": "Market", "Tur": "Gider", "VarsayilanGun": 0},
+            {"Kategori": "Faturalar", "Tur": "Gider", "VarsayilanGun": 0},
+            {"Kategori": "Kredi Kartı", "Tur": "Gider", "VarsayilanGun": 15},
         ]
         pd.DataFrame(varsayilanlar).to_csv(KATEGORI_DOSYASI, index=False)
     else:
-        # Mevcut dosyayı kontrol et, 'Tur' sütunu yoksa ekle
+        # Dosya var, sütunları kontrol et
         df = pd.read_csv(KATEGORI_DOSYASI)
+        degisiklik_var = False
+        
+        # 'Tur' sütunu yoksa ekle
         if "Tur" not in df.columns:
-            # Eski kategorilerin hepsini varsayılan olarak 'Gider' yapalım, kullanıcı düzeltir
-            df["Tur"] = "Gider" 
-            # Maaş kelimesi geçiyorsa Gelir yapalım (Basit tahmin)
+            df["Tur"] = "Gider"
             df.loc[df["Kategori"].str.contains("Maaş|Gelir", case=False, na=False), "Tur"] = "Gelir"
+            degisiklik_var = True
+            
+        # 'VarsayilanGun' sütunu yoksa ekle
+        if "VarsayilanGun" not in df.columns:
+            df["VarsayilanGun"] = 0
+            degisiklik_var = True
+            
+        if degisiklik_var:
             df.to_csv(KATEGORI_DOSYASI, index=False)
 
-    # 2. SABİT GİDERLER
-    if not os.path.exists(SABITLER_DOSYASI):
-        df_sabit = pd.DataFrame(columns=["Sabit Kalem", "Odeme Gunu"])
-        df_sabit.to_csv(SABITLER_DOSYASI, index=False)
-    else:
-        df = pd.read_csv(SABITLER_DOSYASI)
-        if "Odeme Gunu" not in df.columns:
-            df["Odeme Gunu"] = 1
-            df.to_csv(SABITLER_DOSYASI, index=False)
+    # 2. ESKİ SABİT GİDERLERİ İÇERİ AKTARMA (MIGRATION)
+    # Eğer eski sistemden kalan 'sabit_giderler.csv' varsa, onları kategoriye ekle ve dosyayı sil.
+    if os.path.exists(ESKI_SABITLER_DOSYASI):
+        try:
+            df_eski = pd.read_csv(ESKI_SABITLER_DOSYASI)
+            df_kat = pd.read_csv(KATEGORI_DOSYASI)
+            
+            for index, row in df_eski.iterrows():
+                isim = row.get("Sabit Kalem")
+                gun = row.get("Odeme Gunu", 0)
+                
+                # Eğer bu isimde bir kategori yoksa ekle
+                if isim and isim not in df_kat["Kategori"].values:
+                    yeni_veri = pd.DataFrame([{"Kategori": isim, "Tur": "Gider", "VarsayilanGun": gun}])
+                    df_kat = pd.concat([df_kat, yeni_veri], ignore_index=True)
+                # Eğer varsa ve günü 0 ise güncelle
+                elif isim in df_kat["Kategori"].values:
+                    df_kat.loc[df_kat["Kategori"] == isim, "VarsayilanGun"] = gun
+            
+            df_kat.to_csv(KATEGORI_DOSYASI, index=False)
+            
+            # Eski dosyayı yeniden isimlendir (Yedek olarak kalsın, sistem okumasın)
+            os.rename(ESKI_SABITLER_DOSYASI, "sabit_giderler_yedek.bak")
+        except:
+            pass # Hata olursa akış bozulmasın
 
     # 3. ANA VERİ DOSYASI
     if not os.path.exists(VERI_DOSYASI):
@@ -63,6 +88,7 @@ def dosya_kaydet(df, dosya_adi):
     df.to_csv(dosya_adi, index=False)
 
 def gelecek_odeme_tarihi_bul(hedef_gun):
+    """Bugüne göre bir sonraki ödeme tarihini hesaplar."""
     bugun = date.today()
     try:
         hedef_gun = int(float(hedef_gun))
@@ -70,7 +96,7 @@ def gelecek_odeme_tarihi_bul(hedef_gun):
         return bugun 
         
     if hedef_gun < 1 or hedef_gun > 31:
-        return bugun
+        return None # Gün yoksa None dön
 
     try:
         bu_ay_tarih = date(bugun.year, bugun.month, hedef_gun)
@@ -88,226 +114,187 @@ def gelecek_odeme_tarihi_bul(hedef_gun):
             return date(yil, sonraki_ay, 28)
 
 # --- SAYFA YAPISI ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi", page_icon="🐦", layout="wide") # Wide layout yaptık
-dosya_kontrol_ve_yukle()
+st.set_page_config(page_title="Kuşların Bütçe Makinesi", page_icon="🐦", layout="wide")
+sistem_kontrol_ve_goc()
 
-st.title("🐦 Kuşların Bütçe Makinesi")
+st.title("🐦 Kuşların Bütçe Makinesi v5")
 
-# Verileri Çek
+# Verileri Yükle
 try:
     df = verileri_oku(VERI_DOSYASI)
-    df["Tarih"] = pd.to_datetime(df["Tarih"]) # Tarih formatını garantiye al
+    df["Tarih"] = pd.to_datetime(df["Tarih"])
     df_kategoriler = verileri_oku(KATEGORI_DOSYASI)
-    df_sabitler = verileri_oku(SABITLER_DOSYASI)
-except Exception as e:
-    st.error("Veri yüklenirken hata oluştu.")
+except:
     df = pd.DataFrame()
     df_kategoriler = pd.DataFrame()
-    df_sabitler = pd.DataFrame()
 
-# --- YAN MENÜ: FİLTRELEME VE AYARLAR ---
-st.sidebar.header("🔍 Rapor Filtresi")
+# --- YAN MENÜ: FİLTRE VE AYARLAR ---
+st.sidebar.header("🔍 Dönem Seçimi")
 
-# Tarih Filtreleme Mantığı
 if not df.empty:
     yillar = sorted(df["Tarih"].dt.year.unique(), reverse=True)
-    secilen_yil = st.sidebar.selectbox("Yıl Seçin", yillar)
+    secilen_yil = st.sidebar.selectbox("Yıl", yillar)
     
-    # Türkçe Aylar
     aylar_dict = {i: ay for i, ay in enumerate(["Tümü", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", 
                                               "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"])}
+    secilen_ay_index = st.sidebar.selectbox("Ay", list(aylar_dict.keys()), format_func=lambda x: aylar_dict[x], index=datetime.now().month)
     
-    secilen_ay_index = st.sidebar.selectbox("Ay Seçin", list(aylar_dict.keys()), format_func=lambda x: aylar_dict[x], index=datetime.now().month)
-    
-    # Filtreleme İşlemi
     df_filtered = df[df["Tarih"].dt.year == secilen_yil]
-    if secilen_ay_index != 0: # 0 = Tümü
+    if secilen_ay_index != 0:
         df_filtered = df_filtered[df_filtered["Tarih"].dt.month == secilen_ay_index]
-        filtre_mesaji = f"{secilen_yil} - {aylar_dict[secilen_ay_index]} Verileri"
+        filtre_mesaji = f"{aylar_dict[secilen_ay_index]} {secilen_yil}"
     else:
-        filtre_mesaji = f"{secilen_yil} Tüm Veriler"
+        filtre_mesaji = f"{secilen_yil} Tümü"
 else:
     df_filtered = df
     filtre_mesaji = "Veri Yok"
 
 st.sidebar.divider()
-st.sidebar.header("⚙️ Ayarlar")
+st.sidebar.header("⚙️ Kategori Yönetimi")
 
-tab_kat, tab_sabit, tab_reset = st.sidebar.tabs(["Kategoriler", "Sabitler", "Sistem"])
-
-with tab_kat:
-    st.write("**Yeni Kategori Ekle**")
-    kat_tur = st.radio("Bu kategori ne için?", ["Gider", "Gelir"], horizontal=True)
-    yeni_kat = st.text_input("Kategori Adı", placeholder="Örn: Bebek Bezi")
+with st.sidebar.expander("Yeni Kategori Ekle / Sil", expanded=False):
+    st.write("**Yeni Ekle:**")
+    yeni_tur = st.radio("Tür", ["Gider", "Gelir"], horizontal=True)
+    yeni_ad = st.text_input("Kategori Adı", placeholder="Örn: İnternet Faturası")
     
-    if st.button("Kategori Ekle"):
-        if yeni_kat and yeni_kat not in df_kategoriler["Kategori"].values:
-            yeni_veri = pd.DataFrame({"Kategori": [yeni_kat], "Tur": [kat_tur]})
+    yeni_gun = 0
+    if yeni_tur == "Gider":
+        st.caption("Eğer sabit bir ödeme günü varsa belirtin (Yoksa 0):")
+        yeni_gun = st.number_input("Ödeme Günü (Ayın kaçı?)", 0, 31, 0)
+    
+    if st.button("Listeye Ekle"):
+        if yeni_ad and yeni_ad not in df_kategoriler["Kategori"].values:
+            yeni_veri = pd.DataFrame([{"Kategori": yeni_ad, "Tur": yeni_tur, "VarsayilanGun": yeni_gun}])
             df_kategoriler = pd.concat([df_kategoriler, yeni_veri], ignore_index=True)
             dosya_kaydet(df_kategoriler, KATEGORI_DOSYASI)
             st.success("Eklendi!")
             st.rerun()
-            
-    # Silme (Türe göre filtreleyip gösterelim)
+        elif yeni_ad in df_kategoriler["Kategori"].values:
+            st.warning("Bu kategori zaten var.")
+
     st.divider()
-    sil_tur = st.selectbox("Silinecek Türü Seç", ["Gider", "Gelir"])
-    silinecek_liste = df_kategoriler[df_kategoriler["Tur"] == sil_tur]["Kategori"].tolist()
-    sil_kat = st.selectbox("Silinecek Kategori", ["Seçiniz"] + silinecek_liste)
-    
-    if st.button("Sil") and sil_kat != "Seçiniz":
-        df_kategoriler = df_kategoriler[df_kategoriler["Kategori"] != sil_kat]
+    st.write("**Sil:**")
+    silinecek_kat = st.selectbox("Kategori Seç", ["Seçiniz"] + df_kategoriler["Kategori"].tolist())
+    if st.button("Sil") and silinecek_kat != "Seçiniz":
+        df_kategoriler = df_kategoriler[df_kategoriler["Kategori"] != silinecek_kat]
         dosya_kaydet(df_kategoriler, KATEGORI_DOSYASI)
         st.rerun()
 
-with tab_sabit:
-    st.caption("Sadece 'Gider' işlemleri içindir.")
-    c1, c2 = st.columns([2, 1])
-    yeni_sabit = c1.text_input("Gider Adı", placeholder="Örn: Netflix")
-    yeni_gun = c2.number_input("Gün", 1, 31, 1)
-    if st.button("Sabit Ekle"):
-        if yeni_sabit:
-            yeni_veri = pd.DataFrame({"Sabit Kalem": [yeni_sabit], "Odeme Gunu": [yeni_gun]})
-            df_sabitler = pd.concat([df_sabitler, yeni_veri], ignore_index=True)
-            dosya_kaydet(df_sabitler, SABITLER_DOSYASI)
-            st.rerun()
-            
-    # Sabit Silme
-    sabit_list = df_sabitler["Sabit Kalem"].tolist() if not df_sabitler.empty else []
-    sil_sabit = st.selectbox("Sabit Sil", ["Seçiniz"] + sabit_list)
-    if st.button("Sabiti Sil") and sil_sabit != "Seçiniz":
-        df_sabitler = df_sabitler[df_sabitler["Sabit Kalem"] != sil_sabit]
-        dosya_kaydet(df_sabitler, SABITLER_DOSYASI)
-        st.rerun()
+# --- ANA EKRAN: HIZLI VERİ GİRİŞİ ---
+st.subheader("📝 İşlem Ekle")
 
-with tab_reset:
-    if st.button("⚠️ Tüm Kategori Ayarlarını Sıfırla"):
-        if os.path.exists(KATEGORI_DOSYASI): os.remove(KATEGORI_DOSYASI)
-        st.rerun()
+c1, c2, c3, c4 = st.columns([1, 1.5, 1, 1])
 
-# --- ANA EKRAN: VERİ GİRİŞİ ---
-st.subheader("📝 Yeni İşlem Ekle")
+with c1:
+    tur_secimi = st.radio("İşlem", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
 
-# İki sütunlu giriş ekranı
-col_left, col_right = st.columns([1, 2])
+# Kategori listesini türe göre filtrele
+if not df_kategoriler.empty:
+    filtrelenmis_liste = df_kategoriler[df_kategoriler["Tur"] == tur_secimi]
+    kategori_options = filtrelenmis_liste["Kategori"].tolist()
+else:
+    kategori_options = []
 
-with col_left:
-    # 1. Önce Tür Seçimi (En tepeye koyduk ki aşağıyı etkilesin)
-    islem_turu = st.radio("İşlem Türü", ["Gider", "Gelir"], horizontal=True)
+with c2:
+    secilen_kategori = st.selectbox("Kategori", kategori_options)
+
+with c3:
+    tutar = st.number_input("Tutar", min_value=0.0, step=50.0, label_visibility="collapsed", placeholder="Tutar")
+
+with c4:
+    # Kaydet butonu (Tasarım için sağa yasladık)
+    st.write("") # Boşluk
+    st.write("") # Boşluk
+    kaydet_btn = st.button("KAYDET 💾", type="primary", use_container_width=True)
+
+# DETAY ALANI (Sadece Giderse ve Gerekliyse)
+aciklama = ""
+son_odeme_val = None
+islem_tarihi = date.today()
+
+# Seçilen kategorinin varsayılan günü var mı?
+varsayilan_gun = 0
+if secilen_kategori and not df_kategoriler.empty:
+    kat_bilgisi = df_kategoriler[df_kategoriler["Kategori"] == secilen_kategori]
+    if not kat_bilgisi.empty:
+        varsayilan_gun = kat_bilgisi["VarsayilanGun"].values[0]
+
+with st.expander("İşlem Detayları / Tarih Değiştir", expanded=(varsayilan_gun > 0)):
+    d1, d2 = st.columns(2)
+    with d1:
+        islem_tarihi = st.date_input("İşlem Tarihi", date.today())
+        aciklama = st.text_input("Açıklama (Opsiyonel)", placeholder="Detay yazabilirsiniz...")
     
-    # 2. Türüne göre kategori listesini filtrele
-    if not df_kategoriler.empty:
-        filtrelenmis_kategoriler = df_kategoriler[df_kategoriler["Tur"] == islem_turu]["Kategori"].tolist()
-    else:
-        filtrelenmis_kategoriler = ["Genel"]
-        
-    secilen_kategori = st.selectbox("Kategori", filtrelenmis_kategoriler)
-    tutar = st.number_input("Tutar (TL)", min_value=0.0, step=50.0)
-
-with col_right:
-    # 3. Sağ taraf dinamik değişecek
-    islem_tarihi = st.date_input("Tarih", date.today())
-    
-    aciklama = ""
-    son_odeme_val = None
-    
-    if islem_turu == "Gider":
-        # Sadece Gider ise detayları göster
-        giris_yontemi = st.radio("Tanım Şekli", ["Manuel Yaz", "Sabit Listeden Seç"], horizontal=True)
-        
-        if giris_yontemi == "Sabit Listeden Seç":
-            if not df_sabitler.empty:
-                secilen_sabit = st.selectbox("Sabit Gider Seç", df_sabitler["Sabit Kalem"].tolist())
-                aciklama = secilen_sabit
-                # Otomatik Tarih
-                try:
-                    sabit_gun = df_sabitler[df_sabitler["Sabit Kalem"] == secilen_sabit]["Odeme Gunu"].values[0]
-                    onerilen = gelecek_odeme_tarihi_bul(sabit_gun)
-                    st.caption(f"📅 Öneri: Ayın {int(sabit_gun)}. günü")
-                    son_odeme_val = st.date_input("Son Ödeme Tarihi", value=onerilen)
-                except:
-                    son_odeme_val = st.date_input("Son Ödeme Tarihi", value=None)
+    with d2:
+        if tur_secimi == "Gider":
+            # Otomatik Tarih Önerisi
+            if varsayilan_gun > 0:
+                onerilen = gelecek_odeme_tarihi_bul(varsayilan_gun)
+                st.info(f"📅 Bu kategori için varsayılan gün: Ayın {int(varsayilan_gun)}'i")
+                son_odeme_val = st.date_input("Son Ödeme Tarihi", value=onerilen)
             else:
-                st.warning("Sabit listeniz boş. Ayarlardan ekleyebilirsiniz.")
-                aciklama = st.text_input("Açıklama")
-        else:
-            aciklama = st.text_input("Açıklama", placeholder="Market, Benzin vb.")
-            son_odeme_val = st.date_input("Son Ödeme Tarihi (Opsiyonel)", value=None)
-            
+                st.caption("Bu kategori için otomatik tarih yok.")
+                son_odeme_val = st.date_input("Son Ödeme Tarihi (Opsiyonel)", value=None)
+
+# Kaydetme Mantığı
+if kaydet_btn:
+    if not secilen_kategori:
+        st.error("Lütfen kategori seçiniz.")
     else:
-        # Gelir ise sadece açıklama
-        aciklama = st.text_input("Açıklama", placeholder="Maaş, Prim, Satış vb.")
-        st.info("Gelir için son ödeme tarihi takibi yapılmaz.")
+        yeni_satir = pd.DataFrame({
+            "Tarih": [islem_tarihi],
+            "Kategori": [secilen_kategori],
+            "Tür": [tur_secimi],
+            "Tutar": [tutar],
+            "Son Ödeme Tarihi": [son_odeme_val],
+            "Açıklama": [aciklama]
+        })
+        df = pd.concat([df, yeni_satir], ignore_index=True)
+        dosya_kaydet(df, VERI_DOSYASI)
+        st.success(f"{secilen_kategori} - {tutar}₺ Kaydedildi!")
+        st.rerun()
 
-# Kaydet Butonu
-if st.button("KAYDET", type="primary", use_container_width=True):
-    yeni_satir = pd.DataFrame({
-        "Tarih": [islem_tarihi],
-        "Kategori": [secilen_kategori],
-        "Tür": [islem_turu],
-        "Tutar": [tutar],
-        "Son Ödeme Tarihi": [son_odeme_val],
-        "Açıklama": [aciklama]
-    })
-    df = pd.concat([df, yeni_satir], ignore_index=True)
-    dosya_kaydet(df, VERI_DOSYASI)
-    st.success("Kaydedildi!")
-    st.rerun()
-
-# --- RAPORLAR VE GRAFİKLER ---
+# --- RAPORLAR ---
 st.divider()
-st.header(f"📊 Rapor: {filtre_mesaji}")
+st.header(f"📊 Durum: {filtre_mesaji}")
 
 if not df_filtered.empty:
-    # 1. Özet Kartlar (Filtrelenmiş Veriye Göre)
-    toplam_gelir = df_filtered[df_filtered["Tür"] == "Gelir"]["Tutar"].sum()
-    toplam_gider = df_filtered[df_filtered["Tür"] == "Gider"]["Tutar"].sum()
-    net_durum = toplam_gelir - toplam_gider
+    gelir = df_filtered[df_filtered["Tür"] == "Gelir"]["Tutar"].sum()
+    gider = df_filtered[df_filtered["Tür"] == "Gider"]["Tutar"].sum()
+    net = gelir - gider
     
     col1, col2, col3 = st.columns(3)
-    col1.metric("Dönem Geliri", f"{toplam_gelir:,.0f} ₺")
-    col2.metric("Dönem Gideri", f"{toplam_gider:,.0f} ₺")
-    col3.metric("Dönem Net", f"{net_durum:,.0f} ₺", delta_color="normal" if net_durum > 0 else "inverse")
+    col1.metric("Gelir", f"{gelir:,.0f} ₺")
+    col2.metric("Gider", f"{gider:,.0f} ₺")
+    col3.metric("Kalan", f"{net:,.0f} ₺", delta_color="normal" if net > 0 else "inverse")
 
-    # 2. Grafikler
-    tab1, tab2, tab3 = st.tabs(["Pasta Grafiği", "Zaman Çizelgesi", "Detaylı Liste"])
+    t1, t2, t3 = st.tabs(["Pasta Grafiği", "Harcama Detayı", "Liste"])
     
-    with tab1:
-        # Pasta grafiği seçimi
-        tur_secimi = st.radio("Hangi dağılımı görmek istersiniz?", ["Gider Dağılımı", "Gelir Dağılımı"], horizontal=True)
-        hedef_tur = "Gider" if tur_secimi == "Gider Dağılımı" else "Gelir"
-        
-        subset = df_filtered[df_filtered["Tür"] == hedef_tur]
-        if not subset.empty:
-            fig = px.pie(subset, values="Tutar", names="Kategori", hole=0.4)
+    with t1:
+        # Gelir/Gider seçimi yerine sadece dönemin baskın türünü veya kullanıcı seçimini gösterelim
+        gider_data = df_filtered[df_filtered["Tür"] == "Gider"]
+        if not gider_data.empty:
+            fig = px.pie(gider_data, values="Tutar", names="Kategori", title="Gider Dağılımı", hole=0.4)
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info(f"Bu dönemde {hedef_tur} kaydı bulunamadı.")
+            st.info("Bu dönem gider yok.")
             
-    with tab2:
-        # Zaman Çizelgesi (Bar Chart)
-        # Gün bazında grupla
-        gunluk_ozet = df_filtered.groupby(["Tarih", "Tür"])["Tutar"].sum().reset_index()
-        if not gunluk_ozet.empty:
-            fig_bar = px.bar(gunluk_ozet, x="Tarih", y="Tutar", color="Tür", barmode="group", title="Günlük Hareketler")
-            st.plotly_chart(fig_bar, use_container_width=True)
-        else:
-            st.info("Veri yok.")
-
-    with tab3:
-        # Filtrelenmiş liste ve silme
+    with t2:
+        # Kategorilere göre bar grafik
+        if not gider_data.empty:
+            cat_group = gider_data.groupby("Kategori")["Tutar"].sum().reset_index().sort_values("Tutar", ascending=False)
+            st.bar_chart(cat_group, x="Kategori", y="Tutar")
+            
+    with t3:
+        # Liste ve Silme
         st.dataframe(df_filtered.sort_values("Tarih", ascending=False), use_container_width=True)
         
         st.write("---")
-        st.write("**Kayıt Silme (Tüm Zamanlardan):**")
-        # Silme işlemi genelde ID üzerinden yapılır ama burada basitlik için tüm listeden seçtiriyoruz
-        sil_id = st.selectbox("Silinecek Kaydı Seç", df.index, 
-                             format_func=lambda x: f"{df.loc[x, 'Tarih'].strftime('%Y-%m-%d')} | {df.loc[x, 'Tür']} | {df.loc[x, 'Tutar']}₺ | {df.loc[x, 'Açıklama']}")
-        
-        if st.button("Seçili Kaydı Kalıcı Olarak Sil"):
+        sil_id = st.selectbox("Silinecek Kayıt", df.index, 
+                             format_func=lambda x: f"{df.loc[x, 'Tarih'].strftime('%Y-%m-%d')} - {df.loc[x, 'Kategori']} - {df.loc[x, 'Tutar']}₺")
+        if st.button("Kaydı Sil"):
             df = df.drop(sil_id).reset_index(drop=True)
             dosya_kaydet(df, VERI_DOSYASI)
-            st.success("Silindi.")
             st.rerun()
-
 else:
-    st.info("Bu filtreye uygun kayıt bulunamadı. Lütfen filtreyi değiştirin veya yeni kayıt girin.")
+    st.info("Bu tarihlerde kayıt bulunamadı.")
