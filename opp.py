@@ -54,35 +54,25 @@ def tarih_onerisi_hesapla(gun):
         except: return date(yil, s_ay, 28)
 
 def durum_ikonu_belirle(row):
-    """Renklendirme yerine metin bazlı ikon kullanıyoruz (Çökmemesi için)"""
+    """Görsel ikon (Çökme riski yok)"""
     try:
         durum = str(row.get('Durum', False)).lower() == 'true'
         tur = row.get('Tür', '')
         son_odeme = row.get('Son Ödeme Tarihi')
         
-        if tur == 'Gelir':
-            return "💰 Gelir"
+        if tur == 'Gelir': return "💰 Gelir"
+        if durum: return "✅ Ödendi"
         
-        if durum:
-            return "✅ Ödendi"
-        
-        # Gider ve Ödenmemişse tarihe bak
         if pd.notnull(son_odeme) and str(son_odeme) != 'nan':
             tarih_obj = pd.to_datetime(son_odeme).date()
-            if tarih_obj < date.today():
-                return "🔴 Gecikti"
-            elif tarih_obj == date.today():
-                return "🟠 Bugün"
-            else:
-                return "🔵 Bekliyor"
+            if tarih_obj < date.today(): return "🔴 Gecikti"
+            elif tarih_obj == date.today(): return "🟠 Bugün"
+            else: return "🔵 Bekliyor"
         return "⚪ Belirsiz"
-    except:
-        return "⚪ Belirsiz"
+    except: return "⚪ Belirsiz"
 
 # --- BAŞLATMA ---
 sistem_kontrol()
-if 'form_tutar' not in st.session_state: st.session_state.form_tutar = 0.0
-if 'form_aciklama' not in st.session_state: st.session_state.form_aciklama = ""
 
 # Veri Yükleme
 try:
@@ -130,13 +120,15 @@ with st.sidebar:
 
     st.divider()
     with st.expander("Kategori Ekle"):
-        y_tur = st.radio("Tip", ["Gider", "Gelir"], horizontal=True)
-        y_ad = st.text_input("Kategori Adı")
-        y_gun = st.number_input("Gün", 0, 31, 0) if y_tur == "Gider" else 0
-        if st.button("Ekle"):
-            if y_ad:
+        with st.form("kategori_form", clear_on_submit=True):
+            y_tur = st.radio("Tip", ["Gider", "Gelir"], horizontal=True)
+            y_ad = st.text_input("Kategori Adı")
+            y_gun = st.number_input("Gün", 0, 31, 0)
+            kat_btn = st.form_submit_button("Ekle")
+            
+            if kat_btn and y_ad:
                 df_kat = df_kat[df_kat["Kategori"] != y_ad]
-                yeni = pd.DataFrame([{"Kategori": y_ad, "Tur": y_tur, "VarsayilanGun": y_gun}])
+                yeni = pd.DataFrame([{"Kategori": y_ad, "Tur": y_tur, "VarsayilanGun": y_gun if y_tur=="Gider" else 0}])
                 df_kat = pd.concat([df_kat, yeni], ignore_index=True)
                 dosya_kaydet(df_kat, KATEGORI_DOSYASI); st.rerun()
 
@@ -164,32 +156,32 @@ col_sol, col_sag = st.columns([1, 1.5])
 
 with col_sol:
     st.subheader("📝 Veri Girişi")
-    with st.container(border=True):
+    
+    # --- FORM YAPISI (GÜVENLİ VE OTOMATİK SİLİNEN) ---
+    with st.form("islem_formu", clear_on_submit=True):
+        st.caption("Verileri girip Kaydet'e basın. Kutular otomatik temizlenir.")
         giris_tarihi = st.date_input("İşlem Tarihi", date.today())
         
         c_tur1, c_tur2 = st.columns(2)
-        with c_tur1: tur_secimi = st.radio("Tür", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
+        with c_tur1: tur_secimi = st.radio("Tür", ["Gider", "Gelir"], horizontal=True)
         
-        kat_listesi = df_kat[df_kat["Tur"] == tur_secimi]["Kategori"].tolist() if not df_kat.empty else []
+        # Form içinde selectbox state'i zor olduğu için basit liste gösteriyoruz
+        # Kullanıcı buradan bakıp yazabilir veya seçebilir
+        
+        kat_listesi = df_kat["Kategori"].tolist()
         secilen_kat = st.selectbox("Kategori", kat_listesi, index=None, placeholder="Seçiniz...")
         
-        tutar = st.number_input("Tutar (TL)", min_value=0.0, step=50.0, key="form_tutar")
-        aciklama = st.text_input("Açıklama", key="form_aciklama")
+        tutar = st.number_input("Tutar (TL)", min_value=0.0, step=50.0)
+        aciklama = st.text_input("Açıklama")
         
-        varsayilan_gun = 0
-        son_odeme = None
-        if secilen_kat and not df_kat.empty:
-            row = df_kat[df_kat["Kategori"] == secilen_kat]
-            if not row.empty: varsayilan_gun = int(row.iloc[0]["VarsayilanGun"])
+        # Tarih önerisi form içinde dinamik olamaz (Form butona basana kadar donuktur).
+        # Bu yüzden burada manuel giriş istiyoruz.
+        st.caption("Varsa Son Ödeme Tarihi:")
+        son_odeme = st.date_input("Son Ödeme", value=None)
         
-        if tur_secimi == "Gider" and varsayilan_gun > 0:
-            oneri = tarih_onerisi_hesapla(varsayilan_gun)
-            st.caption(f"📅 Sabit Gün: {varsayilan_gun}")
-            son_odeme = st.date_input("Son Ödeme", value=oneri)
-        elif tur_secimi == "Gider":
-             son_odeme = st.date_input("Son Ödeme", value=None)
-
-        if st.button("KAYDET", type="primary", use_container_width=True):
+        kaydet_btn = st.form_submit_button("KAYDET", type="primary")
+        
+        if kaydet_btn:
             if secilen_kat and tutar > 0:
                 yeni = pd.DataFrame({
                     "Tarih": [pd.to_datetime(giris_tarihi)],
@@ -202,10 +194,10 @@ with col_sol:
                 })
                 df = pd.concat([df, yeni], ignore_index=True)
                 dosya_kaydet(df, VERI_DOSYASI)
-                st.session_state["form_tutar"] = 0.0
-                st.session_state["form_aciklama"] = ""
-                st.success("Kaydedildi!"); st.rerun()
-            else: st.error("Eksik bilgi!")
+                st.success("Kaydedildi!")
+                st.rerun()
+            else:
+                st.error("Lütfen Kategori ve Tutar giriniz.")
 
 with col_sag:
     tab_grafik, tab_liste = st.tabs(["📊 Analiz", "📋 Liste ve Ödeme"])
@@ -224,27 +216,21 @@ with col_sag:
             st.bar_chart(grp, x="Kategori", y="Tutar", height=200)
 
     with tab_liste:
-        # --- TABLO KISMI ---
         if not df_filt.empty:
             view_df = df_filt.sort_values("Tarih", ascending=False).copy()
+            view_df["Durum"] = view_df.apply(durum_ikonu_belirle, axis=1)
             
-            # DURUMU EMOJİYE ÇEVİRME
-            view_df["Durum Görsel"] = view_df.apply(durum_ikonu_belirle, axis=1)
-            
-            # Tarih Formatlama (Sadece görüntü için)
+            # Formatlama
             view_df["Tarih"] = view_df["Tarih"].dt.strftime('%d.%m.%Y')
             view_df["Son Ödeme Tarihi"] = pd.to_datetime(view_df["Son Ödeme Tarihi"]).dt.strftime('%d.%m.%Y').fillna("-")
             
-            # Tabloda gösterilecek sütunlar
-            final_view = view_df[["Durum Görsel", "Tarih", "Kategori", "Tutar", "Son Ödeme Tarihi", "Açıklama"]]
-            
-            # Basit Dataframe (Çökme ihtimali yok)
-            st.dataframe(final_view, use_container_width=True, hide_index=True)
+            # Sadece görüntüle (Dataframe)
+            final_cols = ["Durum", "Tarih", "Kategori", "Tutar", "Son Ödeme Tarihi", "Açıklama"]
+            st.dataframe(view_df[final_cols], use_container_width=True, hide_index=True)
             
             st.divider()
-            
-            # Ödeme Yapma
             c_odeme, c_sil = st.columns(2)
+            
             with c_odeme:
                 odenmemisler = df_filt[(df_filt["Tür"]=="Gider") & (df_filt["Durum"]==False)]
                 if not odenmemisler.empty:
