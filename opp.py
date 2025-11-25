@@ -7,7 +7,7 @@ from datetime import datetime, date
 # --- 1. SAYFA AYARLARI ---
 st.set_page_config(page_title="Kuşların Bütçe Makinesi", page_icon="🐦", layout="wide")
 
-# --- CSS ---
+# --- CSS (Görünüm) ---
 st.markdown("""
     <style>
         .block-container {padding-top: 1.5rem; padding-bottom: 1rem;}
@@ -37,12 +37,11 @@ def sistem_kontrol():
             {"Kategori": "Market", "Tur": "Gider", "VarsayilanGun": 0}
         ]).to_csv(KATEGORI_DOSYASI, index=False)
     
-    # Veri Dosyası (Basit Başlangıç)
+    # Veri Dosyası
     if not os.path.exists(VERI_DOSYASI):
         df = pd.DataFrame(columns=["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"])
         df.to_csv(VERI_DOSYASI, index=False)
     else:
-        # Sütun tamamlama
         try:
             df = pd.read_csv(VERI_DOSYASI)
             degisti = False
@@ -56,7 +55,7 @@ def sistem_kontrol():
 def renklendir(val):
     renk = ''
     try:
-        # Durum kontrolü (True/False string veya bool olabilir)
+        # Durum kontrolü
         durum = str(val.get('Durum', False)).lower() == 'true'
         tur = val.get('Tür', '')
         son_odeme = val.get('Son Ödeme Tarihi')
@@ -95,7 +94,7 @@ try:
     df = pd.read_csv(VERI_DOSYASI)
     df["Tarih"] = pd.to_datetime(df["Tarih"], errors='coerce')
     df = df.dropna(subset=["Tarih"])
-    # Durumu temizle
+    # Durum verisini temizle
     df["Durum"] = df["Durum"].astype(str).map({'True': True, 'False': False, 'true': True, 'false': False}).fillna(False)
 except:
     df = pd.DataFrame(columns=["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"])
@@ -233,11 +232,10 @@ with col_sag:
             st.bar_chart(grp, x="Kategori", y="Tutar", height=200)
 
     with tab_liste:
-        # --- ESKİ USUL GÜVENLİ LİSTE ---
-        # Renkli Tablo (İzleme)
+        # --- LİSTE GÖRÜNÜMÜ ---
         if not df_filt.empty:
             view_df = df_filt.sort_values("Tarih", ascending=False).copy()
-            # Tarih formatı
+            # Renklendirme ve Formatlama
             try:
                 styler = view_df.style.apply(renklendir, axis=1)
                 styler.format({"Tarih": lambda t: t.strftime("%d-%m-%Y") if pd.notnull(t) else "",
@@ -247,8 +245,9 @@ with col_sag:
             except:
                 st.dataframe(view_df, use_container_width=True, height=350)
             
-            # --- ÖDENDİ YAP VE SİL BUTONLARI ---
+            # --- AKSİYON BUTONLARI ---
             st.divider()
+            st.write("### ⚡ İşlemler")
             c_odeme, c_sil = st.columns(2)
             
             with c_odeme:
