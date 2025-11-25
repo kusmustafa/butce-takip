@@ -41,8 +41,7 @@ def tarih_onerisi_hesapla(gun):
     if not (1 <= h_gun <= 31): return None
     try: bu_ay = date(bugun.year, bugun.month, h_gun)
     except: bu_ay = date(bugun.year, bugun.month, 28)
-    if bu_ay >= bugun:
-        return bu_ay
+    if bu_ay >= bugun: return bu_ay
     else:
         s_ay = bugun.month + 1 if bugun.month < 12 else 1
         yil = bugun.year if bugun.month < 12 else bugun.year + 1
@@ -55,16 +54,16 @@ def durum_ikonu_belirle(row):
         tur = row.get('Tür', '')
         son_odeme = row.get('Son Ödeme Tarihi')
         
-        if tur == 'Gelir': return "💰 Gelir"
-        if durum: return "✅ Ödendi"
+        if tur == 'Gelir': return "💰"
+        if durum: return "✅"
         
         if pd.notnull(son_odeme) and str(son_odeme) != 'nan':
             tarih_obj = pd.to_datetime(son_odeme).date()
-            if tarih_obj < date.today(): return "🔴 Gecikti"
-            elif tarih_obj == date.today(): return "🟠 Bugün"
-            else: return "🔵 Bekliyor"
-        return "⚪ Belirsiz"
-    except: return "⚪ Belirsiz"
+            if tarih_obj < date.today(): return "🔴"
+            elif tarih_obj == date.today(): return "🟠"
+            else: return "🔵"
+        return "⚪"
+    except: return "⚪"
 
 # --- BAŞLATMA ---
 sistem_kontrol()
@@ -150,7 +149,7 @@ col_sol, col_sag = st.columns([1, 1.5])
 with col_sol:
     st.subheader("📝 Veri Girişi")
     
-    # KATEGORİ SEÇİMİ (Form Dışı - Anlık Yenileme İçin)
+    # 1. BÖLÜM: Kategori Seçimi (Anlık)
     c_tur1, c_tur2 = st.columns(2)
     with c_tur1: tur_secimi = st.radio("Tür", ["Gider", "Gelir"], horizontal=True)
     kat_listesi = df_kat[df_kat["Tur"] == tur_secimi]["Kategori"].tolist() if not df_kat.empty else []
@@ -166,7 +165,7 @@ with col_sol:
         oneri_tarih = tarih_onerisi_hesapla(varsayilan_gun)
         if oneri_tarih: st.info(f"💡 Otomatik Tarih: **{oneri_tarih.strftime('%d.%m.%Y')}**")
 
-    # FORM İÇİ (Girişler)
+    # 2. BÖLÜM: Form
     with st.form("islem_formu", clear_on_submit=True):
         giris_tarihi = st.date_input("İşlem Tarihi", date.today())
         tutar = st.number_input("Tutar (TL)", min_value=0.0, step=50.0)
@@ -187,10 +186,10 @@ with col_sol:
                 df = pd.concat([df, yeni], ignore_index=True)
                 dosya_kaydet(df, VERI_DOSYASI)
                 st.success("✅ Kaydedildi!"); st.rerun()
-            else: st.error("Eksik bilgi!")
+            else: st.error("⚠️ Eksik bilgi!")
 
 with col_sag:
-    tab_grafik, tab_liste = st.tabs(["📊 Analiz", "📋 Liste ve İşlem"])
+    tab_grafik, tab_liste = st.tabs(["📊 Analiz", "📋 Liste ve Kontrol Paneli"])
     
     with tab_grafik:
         if not df_filt.empty and "Gider" in df_filt["Tür"].values:
@@ -208,49 +207,50 @@ with col_sag:
     with tab_liste:
         if not df_filt.empty:
             view_df = df_filt.sort_values("Tarih", ascending=False).copy()
-            view_df["Durum"] = view_df.apply(durum_ikonu_belirle, axis=1)
-            view_df["Tarih"] = view_df["Tarih"].dt.strftime('%d.%m.%Y')
-            view_df["Son Ödeme Tarihi"] = pd.to_datetime(view_df["Son Ödeme Tarihi"]).dt.strftime('%d.%m.%Y').fillna("-")
             
-            st.dataframe(view_df[["Durum", "Tarih", "Kategori", "Tutar", "Son Ödeme Tarihi", "Açıklama"]], use_container_width=True, hide_index=True)
+            # İkon sütunu oluşturma
+            view_df["D"] = view_df.apply(durum_ikonu_belirle, axis=1)
             
-            st.divider()
+            view_df["Tarih"] = view_df["Tarih"].dt.strftime('%d.%m')
+            view_df["Son Ödeme"] = pd.to_datetime(view_df["Son Ödeme Tarihi"]).dt.strftime('%d.%m').fillna("-")
             
-            # 3 PARÇALI İŞLEM ALANI
+            # Sade tablo gösterimi
+            st.dataframe(view_df[["D", "Tarih", "Kategori", "Tutar", "Son Ödeme", "Açıklama"]], 
+                         use_container_width=True, hide_index=True)
+            
+            st.write("---")
+            st.write("### 🎛️ Kontrol Paneli")
+            
+            # --- MERKEZİ SEÇİM ---
+            # Kullanıcı listeden bir satır seçer
+            secilen_id = st.selectbox(
+                "İşlem Yapılacak Kaydı Seçin:",
+                df_filt.index,
+                format_func=lambda x: f"{durum_ikonu_belirle(df.loc[x])} {df.loc[x,'Kategori']} | {df.loc[x,'Tutar']}₺ | {df.loc[x,'Tarih'].strftime('%d.%m')}"
+            )
+            
+            # --- 3 BUTON YAN YANA ---
             c_ode, c_geri, c_sil = st.columns(3)
             
-            # 1. BORÇ ÖDE (Sadece Ödenmemiş Giderler)
             with c_ode:
-                st.write("##### 💰 Öde")
-                odenmemis = df_filt[(df_filt["Tür"]=="Gider") & (df_filt["Durum"]==False)]
-                if not odenmemis.empty:
-                    sec_ode = st.selectbox("Ödenecek Seç", odenmemis.index, 
-                                          format_func=lambda x: f"{df.loc[x,'Kategori']} ({df.loc[x,'Tutar']}₺)",
-                                          label_visibility="collapsed")
-                    if st.button("✅ Ödendi İşaretle", use_container_width=True):
-                        df.at[sec_ode, "Durum"] = True
-                        dosya_kaydet(df, VERI_DOSYASI); st.rerun()
-                else: st.caption("Borç yok.")
-
-            # 2. GERİ AL (Sadece Ödenmiş Giderler - Yanlışlık düzeltme)
+                if st.button("✅ Ödendi Yap", use_container_width=True):
+                    df.at[secilen_id, "Durum"] = True
+                    dosya_kaydet(df, VERI_DOSYASI)
+                    st.success("Güncellendi!")
+                    st.rerun()
+            
             with c_geri:
-                st.write("##### ↩️ Geri Al")
-                odenmis = df_filt[(df_filt["Tür"]=="Gider") & (df_filt["Durum"]==True)]
-                if not odenmis.empty:
-                    sec_geri = st.selectbox("Geri Alınacak Seç", odenmis.index, 
-                                           format_func=lambda x: f"{df.loc[x,'Kategori']} ({df.loc[x,'Tutar']}₺)",
-                                           label_visibility="collapsed")
-                    if st.button("❌ Ödenmedi Yap", use_container_width=True):
-                        df.at[sec_geri, "Durum"] = False
-                        dosya_kaydet(df, VERI_DOSYASI); st.rerun()
-                else: st.caption("İşlem yok.")
+                if st.button("❌ Geri Al (Ödenmedi)", use_container_width=True):
+                    df.at[secilen_id, "Durum"] = False
+                    dosya_kaydet(df, VERI_DOSYASI)
+                    st.info("Geri alındı.")
+                    st.rerun()
 
-            # 3. SİL (Hepsi)
             with c_sil:
-                st.write("##### 🗑️ Sil")
-                sil_id = st.selectbox("Silinecek Seç", df_filt.index, 
-                                     format_func=lambda x: f"{df.loc[x,'Kategori']} ({df.loc[x,'Tutar']}₺)",
-                                     label_visibility="collapsed", key="sil_kutu")
-                if st.button("Kalıcı Sil", type="secondary", use_container_width=True):
-                    df = df.drop(sil_id).reset_index(drop=True)
-                    dosya_kaydet(df, VERI_DOSYASI); st.rerun()
+                if st.button("🗑️ Sil", type="primary", use_container_width=True):
+                    df = df.drop(secilen_id).reset_index(drop=True)
+                    dosya_kaydet(df, VERI_DOSYASI)
+                    st.warning("Silindi.")
+                    st.rerun()
+        else:
+            st.info("Kayıt yok.")
