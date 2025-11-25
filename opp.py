@@ -10,7 +10,6 @@ st.set_page_config(page_title="Kuşların Bütçe Makinesi", page_icon="🐦", l
 # --- DOSYA YÖNETİMİ ---
 VERI_DOSYASI = 'aile_butcesi.csv'
 KATEGORI_DOSYASI = 'kategoriler.csv'
-ESKI_SABITLER_DOSYASI = 'sabit_giderler.csv'
 
 # --- YARDIMCI FONKSİYONLAR ---
 def dosya_kaydet(df, yol): df.to_csv(yol, index=False)
@@ -39,14 +38,21 @@ def sistem_kontrol():
         except: pass
 
 def tarih_onerisi_hesapla(gun):
+    """Verilen güne göre bu ayın veya gelecek ayın tarihini bulur"""
     if not gun or gun == 0: return None
     bugun = date.today()
     try: h_gun = int(gun)
     except: return None
     if not (1 <= h_gun <= 31): return None
-    try: bu_ay = date(bugun.year, bugun.month, h_gun)
-    except: bu_ay = date(bugun.year, bugun.month, 28)
-    if bu_ay >= bugun: return bu_ay
+    
+    # Hedef tarih bu ayın X'i olsun
+    try: bu_ay_tarih = date(bugun.year, bugun.month, h_gun)
+    except: bu_ay_tarih = date(bugun.year, bugun.month, 28) # Şubat koruması
+
+    # Eğer bu tarih geçtiyse (örn: bugün ayın 20'si, hedef 15'i), sonraki aya at
+    # Ancak bugün ayın 15'i ve hedef 15 ise, bugünü önerir.
+    if bu_ay_tarih >= bugun:
+        return bu_ay_tarih
     else:
         s_ay = bugun.month + 1 if bugun.month < 12 else 1
         yil = bugun.year if bugun.month < 12 else bugun.year + 1
@@ -54,7 +60,6 @@ def tarih_onerisi_hesapla(gun):
         except: return date(yil, s_ay, 28)
 
 def durum_ikonu_belirle(row):
-    """Görsel ikon (Çökme riski yok)"""
     try:
         durum = str(row.get('Durum', False)).lower() == 'true'
         tur = row.get('Tür', '')
@@ -151,35 +156,44 @@ else: st.info("Kayıt yok.")
 
 st.divider()
 
-# --- GÖVDE ---
+# --- GÖVDE (Hibrit Yapı) ---
 col_sol, col_sag = st.columns([1, 1.5])
 
 with col_sol:
     st.subheader("📝 Veri Girişi")
     
-    # --- FORM YAPISI (GÜVENLİ VE OTOMATİK SİLİNEN) ---
+    # 1. BÖLÜM: FORM DIŞI (Kategori Seçimi)
+    # Form dışında olduğu için seçince sayfa yenilenir ve tarih hesaplanır.
+    c_tur1, c_tur2 = st.columns(2)
+    with c_tur1: tur_secimi = st.radio("Tür", ["Gider", "Gelir"], horizontal=True)
+    
+    kat_listesi = df_kat[df_kat["Tur"] == tur_secimi]["Kategori"].tolist() if not df_kat.empty else []
+    secilen_kat = st.selectbox("Kategori (Seçince tarih güncellenir)", kat_listesi, index=None, placeholder="Kategori Seçiniz...")
+
+    # Tarih Önerisini Hesapla
+    varsayilan_gun = 0
+    oneri_tarih = None
+    if secilen_kat and not df_kat.empty:
+        row = df_kat[df_kat["Kategori"] == secilen_kat]
+        if not row.empty: varsayilan_gun = int(row.iloc[0]["VarsayilanGun"])
+    
+    if tur_secimi == "Gider" and varsayilan_gun > 0:
+        oneri_tarih = tarih_onerisi_hesapla(varsayilan_gun)
+        if oneri_tarih:
+            st.info(f"💡 Otomatik Tarih: **{oneri_tarih.strftime('%d.%m.%Y')}**")
+
+    # 2. BÖLÜM: FORM İÇİ (Tutar, Açıklama, Kaydet)
+    # Enter ile kaydetmek ve temizlemek için burası form içinde olmalı.
     with st.form("islem_formu", clear_on_submit=True):
-        st.caption("Verileri girip Kaydet'e basın. Kutular otomatik temizlenir.")
         giris_tarihi = st.date_input("İşlem Tarihi", date.today())
-        
-        c_tur1, c_tur2 = st.columns(2)
-        with c_tur1: tur_secimi = st.radio("Tür", ["Gider", "Gelir"], horizontal=True)
-        
-        # Form içinde selectbox state'i zor olduğu için basit liste gösteriyoruz
-        # Kullanıcı buradan bakıp yazabilir veya seçebilir
-        
-        kat_listesi = df_kat["Kategori"].tolist()
-        secilen_kat = st.selectbox("Kategori", kat_listesi, index=None, placeholder="Seçiniz...")
         
         tutar = st.number_input("Tutar (TL)", min_value=0.0, step=50.0)
         aciklama = st.text_input("Açıklama")
         
-        # Tarih önerisi form içinde dinamik olamaz (Form butona basana kadar donuktur).
-        # Bu yüzden burada manuel giriş istiyoruz.
-        st.caption("Varsa Son Ödeme Tarihi:")
-        son_odeme = st.date_input("Son Ödeme", value=None)
+        # Son Ödeme Tarihi (Öneri varsa onu varsayılan yap)
+        son_odeme = st.date_input("Son Ödeme", value=oneri_tarih)
         
-        kaydet_btn = st.form_submit_button("KAYDET", type="primary")
+        kaydet_btn = st.form_submit_button("KAYDET (Enter)", type="primary")
         
         if kaydet_btn:
             if secilen_kat and tutar > 0:
@@ -194,10 +208,10 @@ with col_sol:
                 })
                 df = pd.concat([df, yeni], ignore_index=True)
                 dosya_kaydet(df, VERI_DOSYASI)
-                st.success("Kaydedildi!")
+                st.success("✅ Kaydedildi!")
                 st.rerun()
             else:
-                st.error("Lütfen Kategori ve Tutar giriniz.")
+                st.error("⚠️ Kategori (yukarıda) veya Tutar eksik!")
 
 with col_sag:
     tab_grafik, tab_liste = st.tabs(["📊 Analiz", "📋 Liste ve Ödeme"])
@@ -220,11 +234,9 @@ with col_sag:
             view_df = df_filt.sort_values("Tarih", ascending=False).copy()
             view_df["Durum"] = view_df.apply(durum_ikonu_belirle, axis=1)
             
-            # Formatlama
             view_df["Tarih"] = view_df["Tarih"].dt.strftime('%d.%m.%Y')
             view_df["Son Ödeme Tarihi"] = pd.to_datetime(view_df["Son Ödeme Tarihi"]).dt.strftime('%d.%m.%Y').fillna("-")
             
-            # Sadece görüntüle (Dataframe)
             final_cols = ["Durum", "Tarih", "Kategori", "Tutar", "Son Ödeme Tarihi", "Açıklama"]
             st.dataframe(view_df[final_cols], use_container_width=True, hide_index=True)
             
@@ -239,7 +251,7 @@ with col_sag:
                     if st.button("✅ Ödendi Yap"):
                         df.at[sec_odeme, "Durum"] = True
                         dosya_kaydet(df, VERI_DOSYASI); st.rerun()
-                else: st.caption("Ödenecek borç yok.")
+                else: st.caption("Borç yok.")
 
             with c_sil:
                 sil_id = st.selectbox("Silinecek Kayıt", df_filt.index, 
