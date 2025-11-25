@@ -7,15 +7,16 @@ from datetime import datetime, date
 # --- AYARLAR ---
 VERI_DOSYASI = 'aile_butcesi.csv'
 KATEGORI_DOSYASI = 'kategoriler.csv'
+SABITLER_DOSYASI = 'sabit_giderler.csv'  # Yeni dosya: Sabit ödeme kalemleri
 
 # --- VERİ YÖNETİMİ ---
-def kategorileri_yukle():
-    """Kategorileri dosyadan yükler, dosya yoksa varsayılanları oluşturur."""
-    if not os.path.exists(KATEGORI_DOSYASI):
-        varsayilanlar = ["Market", "Kira", "Faturalar", "Maaş", "Eğlence", "Ulaşım"]
-        df_kat = pd.DataFrame(varsayilanlar, columns=["Kategori"])
-        df_kat.to_csv(KATEGORI_DOSYASI, index=False)
-    return pd.read_csv(KATEGORI_DOSYASI)
+def dosya_yukle(dosya_adi, varsayilan_liste, kolon_adi):
+    """Genel dosya yükleme ve oluşturma fonksiyonu"""
+    if not os.path.exists(dosya_adi):
+        df = pd.DataFrame(varsayilan_liste, columns=[kolon_adi])
+        df.to_csv(dosya_adi, index=False)
+        return df
+    return pd.read_csv(dosya_adi)
 
 def verileri_yukle():
     """Ana veri dosyasını yükler."""
@@ -25,74 +26,103 @@ def verileri_yukle():
         return df
     
     df = pd.read_csv(VERI_DOSYASI)
-    
-    # Eski kullanıcılar için sütun kontrolü (Geriye dönük uyumluluk)
+    # Sütun kontrolü
     if "Son Ödeme Tarihi" not in df.columns:
         df["Son Ödeme Tarihi"] = None
-        
     return df
 
 def dosya_kaydet(df, dosya_adi):
     df.to_csv(dosya_adi, index=False)
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Bütçe Takip v2", page_icon="💰", layout="centered")
-
+st.set_page_config(page_title="Bütçe Takip v3", page_icon="💰", layout="centered")
 st.title("🏠 Gelişmiş Bütçe Takip")
 
 # Verileri Hazırla
 df = verileri_yukle()
-df_kategoriler = kategorileri_yukle()
+
+# Kategorileri Yükle
+varsayilan_kat = ["Kredi Kartı", "Fatura", "Kira", "Market", "Eğlence", "Maaş"]
+df_kategoriler = dosya_yukle(KATEGORI_DOSYASI, varsayilan_kat, "Kategori")
 kategori_listesi = df_kategoriler["Kategori"].tolist()
 
-# --- YAN MENÜ: İŞLEMLER ---
-st.sidebar.header("📝 İşlemler")
+# Sabit Giderleri Yükle
+varsayilan_sabitler = ["Ev Kirası", "Yapı Kredi Kartı", "İş Bankası Kartı", "Elektrik Faturası"]
+df_sabitler = dosya_yukle(SABITLER_DOSYASI, varsayilan_sabitler, "Sabit Kalem")
+sabit_listesi = df_sabitler["Sabit Kalem"].tolist()
 
-# 1. Kategori Yönetimi (Expander ile gizlenebilir alan)
-with st.sidebar.expander("⚙️ Kategori Ayarları"):
-    st.write("Yeni Kategori Ekle:")
-    yeni_kat = st.text_input("Kategori Adı", label_visibility="collapsed", placeholder="Örn: Okul")
-    if st.button("Ekle"):
+# --- YAN MENÜ: AYARLAR ---
+st.sidebar.header("⚙️ Ayarlar")
+
+# Sekmeli Ayar Menüsü
+tab_kat, tab_sabit = st.sidebar.tabs(["Kategoriler", "Sabit Giderler"])
+
+with tab_kat:
+    yeni_kat = st.text_input("Yeni Kategori", placeholder="Örn: Benzin")
+    if st.button("Kategori Ekle"):
         if yeni_kat and yeni_kat not in kategori_listesi:
-            yeni_veri = pd.DataFrame({"Kategori": [yeni_kat]})
-            df_kategoriler = pd.concat([df_kategoriler, yeni_veri], ignore_index=True)
+            df_kategoriler = pd.concat([df_kategoriler, pd.DataFrame({"Kategori": [yeni_kat]})], ignore_index=True)
             dosya_kaydet(df_kategoriler, KATEGORI_DOSYASI)
-            st.success(f"{yeni_kat} eklendi!")
+            st.success("Eklendi!")
             st.rerun()
-        elif yeni_kat in kategori_listesi:
-            st.warning("Bu kategori zaten var.")
-
-    st.write("Kategori Sil:")
+            
     silinecek_kat = st.selectbox("Silinecek Kategori", ["Seçiniz"] + kategori_listesi)
-    if st.button("Sil") and silinecek_kat != "Seçiniz":
+    if st.button("Kategoriyi Sil") and silinecek_kat != "Seçiniz":
         df_kategoriler = df_kategoriler[df_kategoriler["Kategori"] != silinecek_kat]
         dosya_kaydet(df_kategoriler, KATEGORI_DOSYASI)
-        st.success("Silindi.")
         st.rerun()
 
-# 2. Veri Ekleme Formu
+with tab_sabit:
+    st.caption("Sık kullandığın ödeme isimlerini buraya ekle.")
+    yeni_sabit = st.text_input("Yeni Sabit Gider", placeholder="Örn: Netflix")
+    if st.button("Sabit Ekle"):
+        if yeni_sabit and yeni_sabit not in sabit_listesi:
+            df_sabitler = pd.concat([df_sabitler, pd.DataFrame({"Sabit Kalem": [yeni_sabit]})], ignore_index=True)
+            dosya_kaydet(df_sabitler, SABITLER_DOSYASI)
+            st.success("Eklendi!")
+            st.rerun()
+            
+    silinecek_sabit = st.selectbox("Silinecek Sabit", ["Seçiniz"] + sabit_listesi)
+    if st.button("Sabiti Sil") and silinecek_sabit != "Seçiniz":
+        df_sabitler = df_sabitler[df_sabitler["Sabit Kalem"] != silinecek_sabit]
+        dosya_kaydet(df_sabitler, SABITLER_DOSYASI)
+        st.rerun()
+
+# --- YAN MENÜ: VERİ GİRİŞİ ---
 st.sidebar.divider()
-st.sidebar.subheader("Yeni Kayıt")
+st.sidebar.header("📝 Yeni Kayıt")
 
 with st.sidebar.form("ekleme_formu", clear_on_submit=True):
     tarih = st.date_input("İşlem Tarihi", datetime.now())
     tur = st.radio("Tür", ["Gider", "Gelir"], horizontal=True)
-    
-    # Güncel kategori listesini kullan
     kategori = st.selectbox("Kategori", kategori_listesi)
-    
     tutar = st.number_input("Tutar (TL)", min_value=0.0, step=10.0)
     
-    # Sadece GİDER seçilirse Son Ödeme Tarihi görünsün
+    # Gider ise detaylar
     son_odeme = None
+    aciklama = ""
+    
     if tur == "Gider":
-        st.caption("Opsiyonel: Kredi kartı veya fatura için son ödeme tarihi.")
-        son_odeme_input = st.date_input("Son Ödeme Tarihi", value=None)
+        # Açıklama Giriş Yöntemi Seçimi
+        giris_yontemi = st.radio("Ödeme Tanımı", ["Listeden Seç", "Manuel Yaz"], horizontal=True, label_visibility="collapsed")
+        
+        if giris_yontemi == "Listeden Seç":
+            if sabit_listesi:
+                aciklama = st.selectbox("Sabit Gider Seçiniz", sabit_listesi)
+            else:
+                st.warning("Listeniz boş, ayarlardan ekleyin.")
+                aciklama = st.text_input("Açıklama Giriniz")
+        else:
+            aciklama = st.text_input("Açıklama Giriniz", placeholder="Örn: Market alışverişi")
+            
+        st.caption("Son Ödeme Tarihi (Varsa):")
+        son_odeme_input = st.date_input("Son Ödeme", value=None)
         if son_odeme_input:
             son_odeme = son_odeme_input
             
-    aciklama = st.text_input("Açıklama")
-    
+    else: # Gelir ise
+        aciklama = st.text_input("Açıklama", placeholder="Örn: Maaş")
+
     submit = st.form_submit_button("Kaydet")
     
     if submit:
@@ -109,69 +139,70 @@ with st.sidebar.form("ekleme_formu", clear_on_submit=True):
         st.success("Kaydedildi!")
         st.rerun()
 
-# --- ANA EKRAN: ÖZET ---
+# --- ANA EKRAN ---
 if not df.empty:
-    # Temel Hesaplar
+    # Özet Kartlar
     toplam_gelir = df[df["Tür"] == "Gelir"]["Tutar"].sum()
     toplam_gider = df[df["Tür"] == "Gider"]["Tutar"].sum()
     net_durum = toplam_gelir - toplam_gider
     
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Gelir", f"{toplam_gelir:,.2f} ₺", delta_color="normal")
-    col2.metric("Gider", f"{toplam_gider:,.2f} ₺", delta_color="inverse")
-    col3.metric("Kasa", f"{net_durum:,.2f} ₺", delta=f"{net_durum:,.2f} ₺")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Gelir", f"{toplam_gelir:,.0f} ₺", delta_color="normal")
+    c2.metric("Gider", f"{toplam_gider:,.0f} ₺", delta_color="inverse")
+    c3.metric("Kasa", f"{net_durum:,.0f} ₺", delta=f"{net_durum:,.0f} ₺")
     
     st.divider()
 
-    # --- GRAFİKLER ---
-    tab1, tab2 = st.tabs(["📊 Analiz", "📅 Yaklaşan Ödemeler"])
+    # Tablar
+    tab1, tab2, tab3 = st.tabs(["📊 Genel Bakış", "💳 Kredi/Borç Detayı", "📅 Ödeme Takvimi"])
     
     with tab1:
-        c1, c2 = st.columns(2)
-        with c1:
+        # Gelir/Gider Trendi ve Pasta
+        col_a, col_b = st.columns(2)
+        with col_a:
             gider_df = df[df["Tür"] == "Gider"]
             if not gider_df.empty:
-                fig = px.pie(gider_df, values='Tutar', names='Kategori', title='Gider Dağılımı', hole=0.4)
+                # Kategorilere göre grupla
+                kat_ozet = gider_df.groupby("Kategori")["Tutar"].sum().reset_index()
+                fig = px.pie(kat_ozet, values='Tutar', names='Kategori', title='Kategori Bazlı Harcama', hole=0.4)
                 st.plotly_chart(fig, use_container_width=True)
-        with c2:
-            fig2 = px.bar(df, x="Tarih", y="Tutar", color="Tür", title="Zaman Çizelgesi", barmode='group')
-            st.plotly_chart(fig2, use_container_width=True)
+        with col_b:
+             # Aylık Trend
+             df['Ay'] = pd.to_datetime(df['Tarih']).dt.strftime('%Y-%m')
+             aylik_ozet = df.groupby(['Ay', 'Tür'])['Tutar'].sum().reset_index()
+             fig_bar = px.bar(aylik_ozet, x='Ay', y='Tutar', color='Tür', barmode='group', title="Aylık Gelir/Gider")
+             st.plotly_chart(fig_bar, use_container_width=True)
 
     with tab2:
-        # Son ödeme tarihi olan ve henüz tarihi geçmemiş/bugün olan giderleri filtrele
-        bugun = date.today()
-        # Sadece son ödeme tarihi girilmiş olanlar
+        # Sadece sabit giderlerden (kartlar vb) ne kadar harcanmış
+        st.subheader("Ödeme Kalemi Bazlı Analiz")
+        if not gider_df.empty:
+            # Açıklamaya göre grupla (YKB, İş bankası vb. ne kadar tutmuş)
+            kalem_ozet = gider_df.groupby("Açıklama")["Tutar"].sum().reset_index().sort_values("Tutar", ascending=False)
+            st.bar_chart(kalem_ozet, x="Açıklama", y="Tutar")
+            st.dataframe(kalem_ozet, use_container_width=True)
+        else:
+            st.info("Henüz veri yok.")
+
+    with tab3:
+        # Yaklaşan ödemeler
         odeme_df = df[df["Son Ödeme Tarihi"].notnull()].copy()
-        
         if not odeme_df.empty:
-            # Tarih formatını düzeltme ve sıralama
             odeme_df["Son Ödeme Tarihi"] = pd.to_datetime(odeme_df["Son Ödeme Tarihi"]).dt.date
             odeme_df = odeme_df.sort_values("Son Ödeme Tarihi")
-            
-            st.write("Son Ödeme Tarihi Girilen Kayıtlar:")
-            st.dataframe(
-                odeme_df[["Son Ödeme Tarihi", "Kategori", "Tutar", "Açıklama"]],
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(odeme_df[["Son Ödeme Tarihi", "Açıklama", "Tutar", "Kategori"]], 
+                         use_container_width=True, hide_index=True)
         else:
-            st.info("Henüz son ödeme tarihi girilmiş bir kayıt yok.")
+            st.info("Yaklaşan ödeme bulunmuyor.")
 
-    # --- GEÇMİŞ KAYITLAR VE SİLME ---
-    st.divider()
-    st.subheader("📋 Kayıt Geçmişi")
-    
-    # Tabloyu daha şık göstermek için
-    st.dataframe(df.sort_values("Tarih", ascending=False), use_container_width=True)
-    
-    with st.expander("🗑️ Kayıt Silme"):
-        sil_id = st.selectbox("Silinecek İşlem", df.index, 
-                             format_func=lambda x: f"{df.loc[x, 'Tarih']} - {df.loc[x, 'Kategori']} - {df.loc[x, 'Tutar']} ₺")
+    # Geçmiş Tablosu
+    with st.expander("📋 Tüm Kayıtları Gör / Düzenle"):
+        st.dataframe(df.sort_values("Tarih", ascending=False), use_container_width=True)
+        sil_id = st.selectbox("Silinecek Kayıt", df.index, 
+                             format_func=lambda x: f"{df.loc[x, 'Tarih']} | {df.loc[x, 'Açıklama']} | {df.loc[x, 'Tutar']}₺")
         if st.button("Seçili Kaydı Sil"):
             df = df.drop(sil_id).reset_index(drop=True)
             dosya_kaydet(df, VERI_DOSYASI)
-            st.warning("Kayıt silindi.")
             st.rerun()
-
 else:
-    st.info("👋 Hoş geldin! Sol menüden 'Kategori Ayarları'nı yaparak başlayabilirsin.")
+    st.info("Henüz kayıt yok. Sol menüden başlayabilirsiniz.")
