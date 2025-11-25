@@ -149,7 +149,6 @@ col_sol, col_sag = st.columns([1, 1.5])
 with col_sol:
     st.subheader("📝 Veri Girişi")
     
-    # 1. BÖLÜM: Kategori Seçimi (Anlık)
     c_tur1, c_tur2 = st.columns(2)
     with c_tur1: tur_secimi = st.radio("Tür", ["Gider", "Gelir"], horizontal=True)
     kat_listesi = df_kat[df_kat["Tur"] == tur_secimi]["Kategori"].tolist() if not df_kat.empty else []
@@ -165,7 +164,6 @@ with col_sol:
         oneri_tarih = tarih_onerisi_hesapla(varsayilan_gun)
         if oneri_tarih: st.info(f"💡 Otomatik Tarih: **{oneri_tarih.strftime('%d.%m.%Y')}**")
 
-    # 2. BÖLÜM: Form
     with st.form("islem_formu", clear_on_submit=True):
         giris_tarihi = st.date_input("İşlem Tarihi", date.today())
         tutar = st.number_input("Tutar (TL)", min_value=0.0, step=50.0)
@@ -189,68 +187,93 @@ with col_sol:
             else: st.error("⚠️ Eksik bilgi!")
 
 with col_sag:
-    tab_grafik, tab_liste = st.tabs(["📊 Analiz", "📋 Liste ve Kontrol Paneli"])
+    # Sekme isimlerini daha anlaşılır yaptık
+    tab_grafik, tab_liste = st.tabs(["📊 İnteraktif Analiz", "📋 Kontrol Paneli"])
     
     with tab_grafik:
         if not df_filt.empty and "Gider" in df_filt["Tür"].values:
-            sub = df_filt[df_filt["Tür"] == "Gider"]
-            df_pie = sub.groupby("Durum")["Tutar"].sum().reset_index()
-            df_pie["Durum"] = df_pie["Durum"].map({True: "Ödendi ✅", False: "Ödenmedi ❌"})
-            fig = px.pie(df_pie, values="Tutar", names="Durum", hole=0.5, color="Durum", 
-                         color_discrete_map={"Ödendi ✅":"#28a745", "Ödenmedi ❌":"#dc3545"})
-            fig.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=200)
-            st.plotly_chart(fig, use_container_width=True)
+            # Sadece Gider Verileri
+            sub_gider = df_filt[df_filt["Tür"] == "Gider"].copy()
+            
+            # Etiketleri Güzelleştir (True/False -> Ödendi/Ödenmedi)
+            sub_gider["Durum_Etiket"] = sub_gider["Durum"].map({True: "Ödendi ✅", False: "Ödenmedi ❌"})
+            
+            # --- 1. SOL GRAFİK: ANA DURUM (Seçilebilir) ---
+            col_g1, col_g2 = st.columns(2)
+            
+            with col_g1:
+                st.write("###### 1. Ödeme Durumu (Tıkla 👇)")
+                fig_main = px.pie(sub_gider, values="Tutar", names="Durum_Etiket", hole=0.4,
+                                 color="Durum_Etiket",
+                                 color_discrete_map={"Ödendi ✅":"#28a745", "Ödenmedi ❌":"#dc3545"})
+                fig_main.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=250, showlegend=False)
+                
+                # SEÇİM OLAYINI YAKALA (on_select)
+                selected_event = st.plotly_chart(fig_main, on_select="rerun", use_container_width=True)
+            
+            # --- 2. SAĞ GRAFİK: DETAY (Drill-Down) ---
+            with col_g2:
+                # Seçilen dilimi bul
+                secilen_dilim = None
+                try:
+                    # Plotly event yapısından seçilen etiketi çekiyoruz
+                    if selected_event and "selection" in selected_event and selected_event["selection"]["points"]:
+                        secilen_dilim = selected_event["selection"]["points"][0]["label"] # Örn: "Ödendi ✅"
+                except: pass
 
-            grp = sub.groupby("Kategori")["Tutar"].sum().reset_index().sort_values("Tutar", ascending=False).head(5)
-            st.bar_chart(grp, x="Kategori", y="Tutar", height=200)
+                # Veriyi Filtrele (Eğer seçim varsa ona göre, yoksa hepsi)
+                if secilen_dilim:
+                    st.write(f"###### 2. Detay: {secilen_dilim}")
+                    detail_df = sub_gider[sub_gider["Durum_Etiket"] == secilen_dilim]
+                else:
+                    st.write("###### 2. Detay: Tümü")
+                    detail_df = sub_gider
+
+                # Detay Grafiğini Çiz (Kategori Bazlı)
+                if not detail_df.empty:
+                    # Kategoriye göre topla
+                    cat_group = detail_df.groupby("Kategori")["Tutar"].sum().reset_index().sort_values("Tutar", ascending=False)
+                    fig_detail = px.bar(cat_group, x="Kategori", y="Tutar", color="Kategori", text="Tutar")
+                    fig_detail.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=250, showlegend=False)
+                    fig_detail.update_traces(texttemplate='%{text:.2s}', textposition='outside')
+                    st.plotly_chart(fig_detail, use_container_width=True)
+                else:
+                    st.info("Veri yok.")
+            
+            if secilen_dilim:
+                st.caption("💡 Filtreyi kaldırmak için grafik boşluğuna çift tıklayın.")
 
     with tab_liste:
         if not df_filt.empty:
             view_df = df_filt.sort_values("Tarih", ascending=False).copy()
-            
-            # İkon sütunu oluşturma
             view_df["D"] = view_df.apply(durum_ikonu_belirle, axis=1)
-            
             view_df["Tarih"] = view_df["Tarih"].dt.strftime('%d.%m')
             view_df["Son Ödeme"] = pd.to_datetime(view_df["Son Ödeme Tarihi"]).dt.strftime('%d.%m').fillna("-")
             
-            # Sade tablo gösterimi
             st.dataframe(view_df[["D", "Tarih", "Kategori", "Tutar", "Son Ödeme", "Açıklama"]], 
                          use_container_width=True, hide_index=True)
             
             st.write("---")
             st.write("### 🎛️ Kontrol Paneli")
             
-            # --- MERKEZİ SEÇİM ---
-            # Kullanıcı listeden bir satır seçer
             secilen_id = st.selectbox(
                 "İşlem Yapılacak Kaydı Seçin:",
                 df_filt.index,
                 format_func=lambda x: f"{durum_ikonu_belirle(df.loc[x])} {df.loc[x,'Kategori']} | {df.loc[x,'Tutar']}₺ | {df.loc[x,'Tarih'].strftime('%d.%m')}"
             )
             
-            # --- 3 BUTON YAN YANA ---
             c_ode, c_geri, c_sil = st.columns(3)
-            
             with c_ode:
                 if st.button("✅ Ödendi Yap", use_container_width=True):
                     df.at[secilen_id, "Durum"] = True
-                    dosya_kaydet(df, VERI_DOSYASI)
-                    st.success("Güncellendi!")
-                    st.rerun()
-            
+                    dosya_kaydet(df, VERI_DOSYASI); st.success("Ödendi!"); st.rerun()
             with c_geri:
-                if st.button("❌ Geri Al (Ödenmedi)", use_container_width=True):
+                if st.button("❌ Geri Al", use_container_width=True):
                     df.at[secilen_id, "Durum"] = False
-                    dosya_kaydet(df, VERI_DOSYASI)
-                    st.info("Geri alındı.")
-                    st.rerun()
-
+                    dosya_kaydet(df, VERI_DOSYASI); st.info("Geri alındı."); st.rerun()
             with c_sil:
                 if st.button("🗑️ Sil", type="primary", use_container_width=True):
                     df = df.drop(secilen_id).reset_index(drop=True)
-                    dosya_kaydet(df, VERI_DOSYASI)
-                    st.warning("Silindi.")
-                    st.rerun()
+                    dosya_kaydet(df, VERI_DOSYASI); st.warning("Silindi."); st.rerun()
         else:
             st.info("Kayıt yok.")
