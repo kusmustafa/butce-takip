@@ -18,26 +18,23 @@ def dosya_kontrol_ve_yukle():
         df_kat = pd.DataFrame([["Market"], ["Kira"], ["Faturalar"], ["Eğlence"]], columns=["Kategori"])
         df_kat.to_csv(KATEGORI_DOSYASI, index=False)
     else:
-        # Dosya var ama bozuk mu diye bak
         try:
             df = pd.read_csv(KATEGORI_DOSYASI)
             if "Kategori" not in df.columns:
                 raise ValueError("Eski format")
         except:
-            # Bozuksa yeniden oluştur
             df_kat = pd.DataFrame([["Market"], ["Kira"], ["Faturalar"]], columns=["Kategori"])
             df_kat.to_csv(KATEGORI_DOSYASI, index=False)
 
-    # 2. Sabit Giderler Dosyası Kontrolü (Hata burada çıkıyordu)
+    # 2. Sabit Giderler Dosyası Kontrolü
     if not os.path.exists(SABITLER_DOSYASI):
         df_sabit = pd.DataFrame(columns=["Sabit Kalem", "Odeme Gunu"])
         df_sabit.to_csv(SABITLER_DOSYASI, index=False)
     else:
         try:
             df = pd.read_csv(SABITLER_DOSYASI)
-            # Eğer 'Odeme Gunu' sütunu yoksa dosyayı güncelle
             if "Odeme Gunu" not in df.columns:
-                df["Odeme Gunu"] = 1 # Varsayılan olarak ayın 1'i yap
+                df["Odeme Gunu"] = 1
                 df.to_csv(SABITLER_DOSYASI, index=False)
         except:
             df_sabit = pd.DataFrame(columns=["Sabit Kalem", "Odeme Gunu"])
@@ -54,7 +51,7 @@ def dosya_kontrol_ve_yukle():
                 df["Son Ödeme Tarihi"] = None
                 df.to_csv(VERI_DOSYASI, index=False)
         except:
-            pass # Veri kaybı olmaması için ana dosyayı silmiyoruz
+            pass
 
 def verileri_oku(dosya_adi):
     return pd.read_csv(dosya_adi)
@@ -66,14 +63,13 @@ def gelecek_odeme_tarihi_bul(hedef_gun):
     """Bugüne göre bir sonraki ödeme tarihini hesaplar."""
     bugun = date.today()
     try:
-        hedef_gun = int(float(hedef_gun)) # Olası float/string hataları için çift çevirme
+        hedef_gun = int(float(hedef_gun))
     except:
         return bugun 
         
     if hedef_gun < 1 or hedef_gun > 31:
         return bugun
 
-    # Bu ayın hedef günü
     try:
         bu_ay_tarih = date(bugun.year, bugun.month, hedef_gun)
     except ValueError:
@@ -90,12 +86,14 @@ def gelecek_odeme_tarihi_bul(hedef_gun):
             return date(yil, sonraki_ay, 28)
 
 # --- UYGULAMA BAŞLANGICI ---
-st.set_page_config(page_title="Bütçe Asistanı", page_icon="💰", layout="centered")
+# İSİM GÜNCELLEMESİ BURADA YAPILDI
+st.set_page_config(page_title="Kuşların Bütçe Makinesi", page_icon="🐦", layout="centered")
 
 # Önce dosyaları kontrol et ve onar
 dosya_kontrol_ve_yukle()
 
-st.title("🏠 Akıllı Bütçe Asistanı")
+# BAŞLIK GÜNCELLEMESİ
+st.title("🐦 Kuşların Bütçe Makinesi")
 
 # Verileri Yükle
 try:
@@ -103,7 +101,7 @@ try:
     df_kategoriler = verileri_oku(KATEGORI_DOSYASI)
     df_sabitler = verileri_oku(SABITLER_DOSYASI)
 except Exception as e:
-    st.error(f"Veri okuma hatası: {e}. Lütfen sayfayı yenileyin veya 'Verileri Sıfırla' butonunu kullanın.")
+    st.error(f"Veri okuma hatası. Lütfen sayfayı yenileyin.")
     df = pd.DataFrame()
     df_kategoriler = pd.DataFrame()
     df_sabitler = pd.DataFrame()
@@ -115,9 +113,9 @@ st.sidebar.header("⚙️ Ayarlar")
 tab_kat, tab_sabit, tab_sistem = st.sidebar.tabs(["Kategoriler", "Sabitler", "Sistem"])
 
 with tab_kat:
-    yeni_kat = st.text_input("Yeni Kategori", placeholder="Örn: Sağlık")
+    yeni_kat = st.text_input("Yeni Kategori", placeholder="Örn: Yem Parası 🐦")
     if st.button("Kategori Ekle"):
-        if yeni_kat and new_kat not in kategori_listesi:
+        if yeni_kat and yeni_kat not in kategori_listesi:
             df_kategoriler = pd.concat([df_kategoriler, pd.DataFrame({"Kategori": [yeni_kat]})], ignore_index=True)
             dosya_kaydet(df_kategoriler, KATEGORI_DOSYASI)
             st.rerun()
@@ -131,7 +129,7 @@ with tab_kat:
 with tab_sabit:
     st.write("Sabit Ödeme Ekle:")
     c1, c2 = st.columns([2, 1])
-    yeni_sabit_ad = c1.text_input("Gider Adı", placeholder="Örn: Ev Kredisi")
+    yeni_sabit_ad = c1.text_input("Gider Adı", placeholder="Örn: Yuva Kirası")
     yeni_sabit_gun = c2.number_input("Gün", min_value=1, max_value=31, value=1)
     
     if st.button("Sabit Ekle"):
@@ -142,7 +140,6 @@ with tab_sabit:
             st.success("Eklendi!")
             st.rerun()
             
-    # Silme
     sabit_list = df_sabitler["Sabit Kalem"].tolist() if not df_sabitler.empty else []
     sil_sabit = st.selectbox("Sabit Sil", ["Seçiniz"] + sabit_list)
     if st.button("Sabiti Sil") and sil_sabit != "Seçiniz":
@@ -151,8 +148,8 @@ with tab_sabit:
         st.rerun()
 
 with tab_sistem:
-    st.warning("Eğer program hata verirse burayı kullanın.")
-    if st.button("Tüm Sabit Gider Ayarlarını Sıfırla"):
+    st.warning("Acil Durum Butonu")
+    if st.button("Ayarları Sıfırla (Reset)"):
         if os.path.exists(SABITLER_DOSYASI):
             os.remove(SABITLER_DOSYASI)
             st.success("Sıfırlandı. Sayfayı yenileyin.")
@@ -182,14 +179,13 @@ with col_giris2:
                 secilen_sabit = st.selectbox("Sabit Gider", df_sabitler["Sabit Kalem"].tolist())
                 aciklama = secilen_sabit
                 
-                # HATA OLABİLECEK YERİ TRY-EXCEPT İLE SARDIM
                 try:
                     secilen_gun = df_sabitler[df_sabitler["Sabit Kalem"] == secilen_sabit]["Odeme Gunu"].values[0]
                     onerilen_tarih = gelecek_odeme_tarihi_bul(secilen_gun)
                     st.caption(f"📅 Öneri: Ayın {int(secilen_gun)}. günü")
                     son_odeme_val = st.date_input("Son Ödeme Tarihi", value=onerilen_tarih)
                 except:
-                    st.warning("Tarih hesaplanamadı, manuel giriniz.")
+                    st.warning("Tarih hesaplanamadı.")
                     son_odeme_val = st.date_input("Son Ödeme Tarihi", value=None)
             else:
                 st.warning("Listeniz boş.")
@@ -211,7 +207,7 @@ if st.button("KAYDET", type="primary", use_container_width=True):
     })
     df = pd.concat([df, yeni_satir], ignore_index=True)
     dosya_kaydet(df, VERI_DOSYASI)
-    st.success("Kaydedildi!")
+    st.success("Kayıt Başarılı! 🐦")
 
 # --- RAPORLAR ---
 st.divider()
@@ -224,9 +220,9 @@ if not df.empty:
     c1, c2, c3 = st.columns(3)
     c1.metric("Gelir", f"{gelir:,.0f} ₺")
     c2.metric("Gider", f"{gider:,.0f} ₺")
-    c3.metric("Net", f"{kasa:,.0f} ₺", delta_color="normal" if kasa > 0 else "inverse")
+    c3.metric("Kasa Durumu", f"{kasa:,.0f} ₺", delta_color="normal" if kasa > 0 else "inverse")
 
-    t1, t2, t3 = st.tabs(["📊 Grafikler", "💳 Kart/Borç Detay", "📅 Ödeme Takvimi"])
+    t1, t2, t3 = st.tabs(["📊 Grafikler", "💳 Kart Detay", "📅 Takvim"])
     
     with t1:
         giderler = df[df["Tür"] == "Gider"]
@@ -248,7 +244,7 @@ if not df.empty:
         else:
             st.info("Planlanmış ödeme yok.")
             
-    with st.expander("📋 İşlem Geçmişi / Silme"):
+    with st.expander("📋 Kayıt Geçmişi / Silme"):
         st.dataframe(df.sort_values("Tarih", ascending=False), use_container_width=True)
         sil_id = st.selectbox("Silinecek Kayıt", df.index, format_func=lambda x: f"{df.loc[x, 'Açıklama']} - {df.loc[x, 'Tutar']}₺")
         if st.button("Sil"):
@@ -256,4 +252,4 @@ if not df.empty:
             dosya_kaydet(df, VERI_DOSYASI)
             st.rerun()
 else:
-    st.info("Kayıt bulunamadı.")
+    st.info("Henüz kayıt yok. Kuşların Bütçe Makinesi hazır! 🐦")
