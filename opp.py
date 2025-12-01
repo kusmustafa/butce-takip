@@ -5,25 +5,41 @@ from datetime import datetime, date
 from streamlit_gsheets import GSheetsConnection
 
 # --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v22.1", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v22.2", page_icon="🐦", layout="wide")
 
 # --- BAĞLANTIYI KUR ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# --- SABİT KOLONLAR ---
+KOLONLAR = ["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"]
+
 # --- YARDIMCI FONKSİYONLAR ---
 def verileri_cek():
     try:
+        # Veriyi oku
         df = conn.read(worksheet="Veriler", ttl=0)
+        
+        # Eğer sayfa tamamen boşsa veya "Tarih" sütunu yoksa boş şablon döndür
+        if df.empty or "Tarih" not in df.columns:
+            return pd.DataFrame(columns=KOLONLAR)
+            
+        # Tamamen boş satırları temizle
         df = df.dropna(how="all")
+        
+        # Eksik kolon varsa tamamla (KeyError Çözümü)
+        for col in KOLONLAR:
+            if col not in df.columns:
+                df[col] = pd.NA
+                
         return df
     except:
-        return pd.DataFrame(columns=["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"])
+        return pd.DataFrame(columns=KOLONLAR)
 
 def kategorileri_cek():
     try:
         df = conn.read(worksheet="Kategoriler", ttl=0)
         df = df.dropna(how="all")
-        if df.empty: raise Exception("Boş")
+        if df.empty or "Kategori" not in df.columns: raise Exception("Boş")
         return df
     except:
         varsayilan = pd.DataFrame([
@@ -34,18 +50,18 @@ def kategorileri_cek():
         return varsayilan
 
 def verileri_kaydet(df):
-    # --- KRİTİK DÜZELTME ---
-    # Google API hatasını önlemek için veriyi temizle
     save_df = df.copy()
-    
-    # 1. Tarihleri String yap (NaT hatasını önle)
+    # Hata önleyici dönüşümler
     save_df["Tarih"] = save_df["Tarih"].astype(str).replace('NaT', '')
     save_df["Son Ödeme Tarihi"] = save_df["Son Ödeme Tarihi"].astype(str).replace('NaT', '')
+    save_df = save_df.fillna("") # NaN temizliği
     
-    # 2. NaN (Tanımsız) değerleri boş stringe çevir (APIError Çözümü)
-    save_df = save_df.fillna("")
-    
-    conn.update(worksheet="Veriler", data=save_df)
+    # Sadece tanımlı kolonları kaydet
+    for col in KOLONLAR:
+        if col not in save_df.columns:
+            save_df[col] = ""
+            
+    conn.update(worksheet="Veriler", data=save_df[KOLONLAR])
 
 def kategorileri_kaydet(df):
     conn.update(worksheet="Kategoriler", data=df)
@@ -69,14 +85,24 @@ def tarih_onerisi_hesapla(gun):
 df = verileri_cek()
 df_kat = kategorileri_cek()
 
-# Tipleri düzelt (Okurken)
+# Tipleri düzelt
 if not df.empty:
     df["Tarih"] = pd.to_datetime(df["Tarih"], errors='coerce')
     df = df.dropna(subset=["Tarih"])
-    # Boolean dönüşümü
-    df["Durum"] = df["Durum"].astype(str).str.lower().map({'true': True, 'false': False, '1.0': True, '0.0': False, '1': True, '0': False}).fillna(False)
-    # Tutar dönüşümü
-    df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
+    
+    # Durum düzeltme
+    if "Durum" in df.columns:
+        df["Durum"] = df["Durum"].astype(str).str.lower().map(
+            {'true': True, 'false': False, '1.0': True, '0.0': False, '1': True, '0': False, 'nan': False}
+        ).fillna(False)
+    else:
+        df["Durum"] = False
+        
+    # Tutar düzeltme
+    if "Tutar" in df.columns:
+        df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
+    else:
+        df["Tutar"] = 0.0
 
 # --- YAN MENÜ ---
 with st.sidebar:
@@ -88,7 +114,8 @@ with st.sidebar:
 
     st.divider()
     
-    if not df.empty:
+    # Dönem Seçimi
+    if not df.empty and "Tarih" in df.columns:
         yil_list = sorted(df["Tarih"].dt.year.unique(), reverse=True)
         secenekler = ["Tüm Zamanlar"] + list(yil_list)
         secilen_yil = st.selectbox("Dönem", secenekler)
@@ -125,8 +152,8 @@ with st.sidebar:
                 st.rerun()
 
 # --- ÜST BİLGİ ---
-st.title("☁️ Kuşların Bütçe Makinesi v22.1")
-st.caption(f"Rapor: **{baslik}** | Kayıt Yeri: **Google Sheets (Güvenli)**")
+st.title("☁️ Kuşların Bütçe Makinesi v22.2")
+st.caption(f"Rapor: **{baslik}** | Kayıt Yeri: **Google Sheets**")
 
 if not df_filt.empty:
     gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
@@ -228,44 +255,51 @@ with col_sag:
     with tab_liste:
         st.write("###### 🖊️ Bulut Verilerini Düzenle")
         
-        # Editör için güvenli veri hazırlığı
-        editor_df = df_filt.sort_values("Tarih", ascending=False).copy()
-        if not editor_df.empty:
+        # KEYERROR FIX: "Tarih" sütununun varlığından emin ol
+        if not df_filt.empty and "Tarih" in df_filt.columns:
+            editor_df = df_filt.sort_values("Tarih", ascending=False).copy()
             editor_df["Tarih"] = editor_df["Tarih"].dt.date
-            editor_df["Son Ödeme Tarihi"] = pd.to_datetime(editor_df["Son Ödeme Tarihi"], errors='coerce').dt.date
+            
+            # Son Ödeme Tarihi kontrolü
+            if "Son Ödeme Tarihi" in editor_df.columns:
+                editor_df["Son Ödeme Tarihi"] = pd.to_datetime(editor_df["Son Ödeme Tarihi"], errors='coerce').dt.date
+            else:
+                editor_df["Son Ödeme Tarihi"] = None
 
-        tum_kategoriler = df_kat["Kategori"].unique().tolist() if not df_kat.empty else []
+            tum_kategoriler = df_kat["Kategori"].unique().tolist() if not df_kat.empty else []
 
-        duzenlenmis_df = st.data_editor(
-            editor_df,
-            column_config={
-                "Durum": st.column_config.CheckboxColumn("Ödendi?", default=False),
-                "Tutar": st.column_config.NumberColumn("Tutar", format="%.2f ₺"),
-                "Tarih": st.column_config.DateColumn("Tarih", format="DD.MM.YYYY"),
-                "Son Ödeme Tarihi": st.column_config.DateColumn("Son Ödeme", format="DD.MM.YYYY"),
-                "Kategori": st.column_config.SelectboxColumn("Kategori", options=tum_kategoriler),
-                "Tür": st.column_config.SelectboxColumn("Tür", options=["Gider", "Gelir"]),
-            },
-            hide_index=True,
-            use_container_width=True,
-            num_rows="dynamic",
-            key="gsheet_editor"
-        )
+            duzenlenmis_df = st.data_editor(
+                editor_df,
+                column_config={
+                    "Durum": st.column_config.CheckboxColumn("Ödendi?", default=False),
+                    "Tutar": st.column_config.NumberColumn("Tutar", format="%.2f ₺"),
+                    "Tarih": st.column_config.DateColumn("Tarih", format="DD.MM.YYYY"),
+                    "Son Ödeme Tarihi": st.column_config.DateColumn("Son Ödeme", format="DD.MM.YYYY"),
+                    "Kategori": st.column_config.SelectboxColumn("Kategori", options=tum_kategoriler),
+                    "Tür": st.column_config.SelectboxColumn("Tür", options=["Gider", "Gelir"]),
+                },
+                hide_index=True,
+                use_container_width=True,
+                num_rows="dynamic",
+                key="gsheet_editor"
+            )
 
-        if st.button("💾 Değişiklikleri Buluta Gönder", type="primary", use_container_width=True):
-            try:
-                # 1. Filtre dışındakileri al
-                indices_to_drop = df_filt.index
-                df_rest = df.drop(indices_to_drop)
-                
-                # 2. Yeni veriyi formatla
-                duzenlenmis_df["Tarih"] = pd.to_datetime(duzenlenmis_df["Tarih"])
-                
-                # 3. Birleştir ve Gönder
-                df_final = pd.concat([df_rest, duzenlenmis_df], ignore_index=True)
-                verileri_kaydet(df_final)
-                st.success("Google Sheets güncellendi! 🚀")
-                st.cache_data.clear() # Cache temizle ki yeni veriyi çeksin
-                st.rerun()
-            except Exception as e:
-                st.error(f"Hata: {e}")
+            if st.button("💾 Değişiklikleri Buluta Gönder", type="primary", use_container_width=True):
+                try:
+                    # 1. Filtre dışındakileri al
+                    indices_to_drop = df_filt.index
+                    df_rest = df.drop(indices_to_drop)
+                    
+                    # 2. Yeni veriyi formatla
+                    duzenlenmis_df["Tarih"] = pd.to_datetime(duzenlenmis_df["Tarih"])
+                    
+                    # 3. Birleştir ve Gönder
+                    df_final = pd.concat([df_rest, duzenlenmis_df], ignore_index=True)
+                    verileri_kaydet(df_final)
+                    st.success("Google Sheets güncellendi! 🚀")
+                    st.cache_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Hata: {e}")
+        else:
+            st.warning("Görüntülenecek veya düzenlenecek veri yok.")
