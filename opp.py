@@ -5,20 +5,18 @@ from datetime import datetime, date
 from streamlit_gsheets import GSheetsConnection
 
 # --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v22 (Bulut)", page_icon="☁️", layout="wide")
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v22.1", page_icon="🐦", layout="wide")
 
 # --- BAĞLANTIYI KUR ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- YARDIMCI FONKSİYONLAR ---
 def verileri_cek():
-    # Veriler sekmesini oku
     try:
-        df = conn.read(worksheet="Veriler", ttl=0) # ttl=0 önbellek yapma demek (anlık veri)
-        df = df.dropna(how="all") # Tamamen boş satırları sil
+        df = conn.read(worksheet="Veriler", ttl=0)
+        df = df.dropna(how="all")
         return df
     except:
-        # Eğer sayfa boşsa başlıkları oluştur
         return pd.DataFrame(columns=["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"])
 
 def kategorileri_cek():
@@ -28,7 +26,6 @@ def kategorileri_cek():
         if df.empty: raise Exception("Boş")
         return df
     except:
-        # Varsayılan kategoriler
         varsayilan = pd.DataFrame([
             {"Kategori": "Maaş", "Tur": "Gelir", "VarsayilanGun": 0},
             {"Kategori": "Market", "Tur": "Gider", "VarsayilanGun": 0}
@@ -37,10 +34,17 @@ def kategorileri_cek():
         return varsayilan
 
 def verileri_kaydet(df):
-    # Tarihleri string formatına çevir ki Sheets bozulmasın
+    # --- KRİTİK DÜZELTME ---
+    # Google API hatasını önlemek için veriyi temizle
     save_df = df.copy()
-    save_df["Tarih"] = save_df["Tarih"].astype(str)
+    
+    # 1. Tarihleri String yap (NaT hatasını önle)
+    save_df["Tarih"] = save_df["Tarih"].astype(str).replace('NaT', '')
     save_df["Son Ödeme Tarihi"] = save_df["Son Ödeme Tarihi"].astype(str).replace('NaT', '')
+    
+    # 2. NaN (Tanımsız) değerleri boş stringe çevir (APIError Çözümü)
+    save_df = save_df.fillna("")
+    
     conn.update(worksheet="Veriler", data=save_df)
 
 def kategorileri_kaydet(df):
@@ -65,11 +69,13 @@ def tarih_onerisi_hesapla(gun):
 df = verileri_cek()
 df_kat = kategorileri_cek()
 
-# Tipleri düzelt
+# Tipleri düzelt (Okurken)
 if not df.empty:
     df["Tarih"] = pd.to_datetime(df["Tarih"], errors='coerce')
     df = df.dropna(subset=["Tarih"])
-    df["Durum"] = df["Durum"].astype(str).map({'True': True, 'False': False, 'TRUE': True, 'FALSE': False, '1.0': True, '0.0': False}).fillna(False)
+    # Boolean dönüşümü
+    df["Durum"] = df["Durum"].astype(str).str.lower().map({'true': True, 'false': False, '1.0': True, '0.0': False, '1': True, '0': False}).fillna(False)
+    # Tutar dönüşümü
     df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
 
 # --- YAN MENÜ ---
@@ -119,7 +125,7 @@ with st.sidebar:
                 st.rerun()
 
 # --- ÜST BİLGİ ---
-st.title("☁️ Kuşların Bütçe Makinesi v22")
+st.title("☁️ Kuşların Bütçe Makinesi v22.1")
 st.caption(f"Rapor: **{baslik}** | Kayıt Yeri: **Google Sheets (Güvenli)**")
 
 if not df_filt.empty:
@@ -222,6 +228,7 @@ with col_sag:
     with tab_liste:
         st.write("###### 🖊️ Bulut Verilerini Düzenle")
         
+        # Editör için güvenli veri hazırlığı
         editor_df = df_filt.sort_values("Tarih", ascending=False).copy()
         if not editor_df.empty:
             editor_df["Tarih"] = editor_df["Tarih"].dt.date
