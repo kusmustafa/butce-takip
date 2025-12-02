@@ -5,13 +5,14 @@ from datetime import datetime, date
 from streamlit_gsheets import GSheetsConnection
 
 # --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v24", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v25", page_icon="🐦", layout="wide")
 
 # --- BAĞLANTIYI KUR ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- SABİT KOLONLAR ---
+# --- SABİT DEĞERLER ---
 KOLONLAR = ["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"]
+AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 
 # --- YARDIMCI FONKSİYONLAR ---
 def verileri_cek():
@@ -29,7 +30,7 @@ def verileri_cek():
 
 def kategorileri_cek():
     varsayilan = pd.DataFrame([
-        {"Kategori": "Maaş", "Tur": "Gelir", "VarsayilanGun": 0},
+        {"Kategori": "Maaş", "Tur": "Gelir", "VarsayilanGun": 1},
         {"Kategori": "Market", "Tur": "Gider", "VarsayilanGun": 0}
     ])
     try:
@@ -54,27 +55,45 @@ def verileri_kaydet(df):
 def kategorileri_kaydet(df):
     conn.update(worksheet="Kategoriler", data=df)
 
-def tarih_onerisi_hesapla(gun):
-    # ValueError Koruması: Gelen veri ne olursa olsun (str, float, None) güvenle işle
-    if not gun: return None
+# --- YENİ TARİH MANTIĞI (DÖNEM BAZLI) ---
+def tarih_olustur(yil, ay_ismi, gun):
+    # Ay ismini indexe çevir (Ocak=1, Şubat=2...)
     try:
-        h_gun = int(float(gun)) # "15.0" gelirse önce float yap sonra int yap
-        if h_gun == 0: return None
+        ay_index = AYLAR.index(ay_ismi) + 1
     except:
-        return None
+        ay_index = datetime.now().month
 
-    bugun = date.today()
-    if not (1 <= h_gun <= 31): return None
+    # Gün 0 ise veya yoksa ayın 1'i kabul et
+    try:
+        h_gun = int(float(gun))
+        if h_gun <= 0: h_gun = 1
+    except: h_gun = 1
+
+    # Geçerli bir tarih oluşturmaya çalış (Örn: Şubat 30 olamaz)
+    try:
+        return date(yil, ay_index, h_gun)
+    except ValueError:
+        # Eğer tarih geçersizse (Örn: 30 Şubat), o ayın son gününü al
+        # (Basit çözüm: Ayın 28'ine çek)
+        return date(yil, ay_index, 28)
+
+def son_odeme_hesapla(islem_tarihi, varsayilan_gun):
+    # Eğer varsayılan gün varsa, son ödeme tarihi o ayın o günüdür.
+    # Eğer işlem tarihi o günü geçtiyse bir sonraki aydır (Kredi kartı mantığı)
+    if not varsayilan_gun or varsayilan_gun == 0:
+        return islem_tarihi
     
-    try: bu_ay = date(bugun.year, bugun.month, h_gun)
-    except: bu_ay = date(bugun.year, bugun.month, 28)
-    
-    if bu_ay >= bugun: return bu_ay
-    else:
-        s_ay = bugun.month + 1 if bugun.month < 12 else 1
-        yil = bugun.year if bugun.month < 12 else bugun.year + 1
-        try: return date(yil, s_ay, h_gun)
-        except: return date(yil, s_ay, 28)
+    try:
+        v_gun = int(float(varsayilan_gun))
+        
+        # O ayın v_gun'ü
+        tahmini_tarih = tarih_olustur(islem_tarihi.year, AYLAR[islem_tarihi.month-1], v_gun)
+        
+        # Eğer işlem tarihi zaten o günü geçmişse, son ödeme bir sonraki aydır?
+        # Kullanıcı genelde dönemi seçtiği için direkt o ayın o günü olsun.
+        return tahmini_tarih
+    except:
+        return islem_tarihi
 
 # --- BAŞLATMA ---
 df = verileri_cek()
@@ -102,23 +121,34 @@ with st.sidebar:
         st.rerun()
     st.divider()
     
+    # DÖNEM SEÇİMİ (FİLTRELEME)
     if not df.empty and "Tarih" in df.columns:
         yil_list = sorted(df["Tarih"].dt.year.unique(), reverse=True)
+        # Eğer mevcut yıl listede yoksa ekle (yeni başlayanlar için)
+        if datetime.now().year not in yil_list:
+            yil_list.insert(0, datetime.now().year)
+            
         secenekler = ["Tüm Zamanlar"] + list(yil_list)
-        secilen_yil = st.selectbox("Dönem", secenekler)
+        secilen_yil_filtre = st.selectbox("Dönem (Yıl)", secenekler)
         
-        if secilen_yil == "Tüm Zamanlar":
+        if secilen_yil_filtre == "Tüm Zamanlar":
             df_filt = df; baslik = "Tüm Zamanlar"
         else:
-            df_filt = df[df["Tarih"].dt.year == secilen_yil]
-            ay_map = {i: ay for i, ay in enumerate(["Yılın Tamamı", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"])}
+            df_filt = df[df["Tarih"].dt.year == secilen_yil_filtre]
+            
+            # Ay filtresi
             now = datetime.now()
-            idx = now.month if secilen_yil == now.year else 0
-            secilen_ay_index = st.selectbox("Ay", list(ay_map.keys()), format_func=lambda x: ay_map[x], index=idx)
-            if secilen_ay_index != 0:
-                df_filt = df_filt[df_filt["Tarih"].dt.month == secilen_ay_index]
-                baslik = f"{ay_map[secilen_ay_index]} {secilen_yil}"
-            else: baslik = f"{secilen_yil} Tamamı"
+            varsayilan_ay_index = now.month if secilen_yil_filtre == now.year else 0
+            
+            ay_secenekleri = ["Yılın Tamamı"] + AYLAR
+            secilen_ay_filtre = st.selectbox("Dönem (Ay)", ay_secenekleri, index=varsayilan_ay_index)
+            
+            if secilen_ay_filtre != "Yılın Tamamı":
+                ay_no = AYLAR.index(secilen_ay_filtre) + 1
+                df_filt = df_filt[df_filt["Tarih"].dt.month == ay_no]
+                baslik = f"{secilen_ay_filtre} {secilen_yil_filtre}"
+            else:
+                baslik = f"{secilen_yil_filtre} Tamamı"
     else: df_filt = df; baslik = "Veri Yok"
 
     st.divider()
@@ -126,7 +156,7 @@ with st.sidebar:
         with st.form("kategori_form", clear_on_submit=True):
             y_tur = st.radio("Tip", ["Gider", "Gelir"], horizontal=True)
             y_ad = st.text_input("Kategori Adı")
-            y_gun = st.number_input("Gün", 0, 31, 0)
+            y_gun = st.number_input("Varsayılan Gün (Ayın kaçı?)", 0, 31, 0, help="0 girersen ayın 1'i kabul edilir.")
             kat_btn = st.form_submit_button("Ekle")
             if kat_btn and y_ad:
                 try:
@@ -134,8 +164,7 @@ with st.sidebar:
                 except: guncel_kat = df_kat
                 
                 if y_ad not in guncel_kat["Kategori"].values:
-                    # Yeni kategoriyi ekle
-                    yeni = pd.DataFrame([{"Kategori": y_ad, "Tur": y_tur, "VarsayilanGun": y_gun if y_tur=="Gider" else 0}])
+                    yeni = pd.DataFrame([{"Kategori": y_ad, "Tur": y_tur, "VarsayilanGun": y_gun}])
                     guncel_kat = pd.concat([guncel_kat, yeni], ignore_index=True)
                     kategorileri_kaydet(guncel_kat)
                     st.success(f"{y_ad} eklendi!")
@@ -144,8 +173,8 @@ with st.sidebar:
                 else: st.warning("Bu kategori zaten var.")
 
 # --- SAYFA İÇERİĞİ ---
-st.title("☁️ Kuşların Bütçe Makinesi v24")
-st.caption(f"Rapor: **{baslik}** | Kayıt Yeri: **Google Sheets**")
+st.title("☁️ Kuşların Bütçe Makinesi v25")
+st.caption(f"Rapor: **{baslik}** | Mod: **Dönem Bazlı Giriş**")
 
 if not df_filt.empty:
     gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
@@ -157,53 +186,75 @@ if not df_filt.empty:
     k2.metric("Gider", f"{gider:,.0f} ₺")
     k3.metric("Net", f"{net:,.0f} ₺", delta_color="normal" if net > 0 else "inverse")
     k4.metric("Ödenmemiş", f"{bekleyen:,.0f} ₺", delta_color="inverse")
-else: st.info("Veri yok.")
+else: st.info("Seçilen dönemde kayıt yok.")
 
 st.divider()
 
 col_sol, col_sag = st.columns([1, 1.5])
 
 with col_sol:
-    st.subheader("📝 Hızlı Veri Girişi")
+    st.subheader("📝 Dönem Bazlı Veri Girişi")
+    
+    # --- YENİ GİRİŞ SİSTEMİ (V25) ---
+    c_donem1, c_donem2 = st.columns(2)
+    current_year = datetime.now().year
+    current_month_idx = datetime.now().month - 1
+    
+    with c_donem1:
+        # Gelecek 1 yıl ve geçmiş 2 yılı göster
+        yil_secimi = st.selectbox("Hangi Yıl?", range(current_year-2, current_year+2), index=2) 
+    with c_donem2:
+        ay_secimi = st.selectbox("Hangi Ay?", AYLAR, index=current_month_idx)
+
     c_tur1, c_tur2 = st.columns(2)
     with c_tur1: tur_secimi = st.radio("Tür", ["Gider", "Gelir"], horizontal=True)
     
     kat_listesi = df_kat[df_kat["Tur"] == tur_secimi]["Kategori"].tolist() if not df_kat.empty else []
     secilen_kat = st.selectbox("Kategori", kat_listesi, index=None, placeholder="Kategori Seçiniz...")
     
-    # --- VALUE ERROR FIX ---
+    # Varsayılan Günü Çek
     varsayilan_gun = 0
-    oneri_tarih = None
     if secilen_kat and not df_kat.empty:
         row = df_kat[df_kat["Kategori"] == secilen_kat]
         if not row.empty:
-            try:
-                # Gelen veriyi (str, float, int) zorla int'e çevir, hata verirse 0 yap
-                raw_val = row.iloc[0]["VarsayilanGun"]
-                varsayilan_gun = int(float(raw_val))
-            except:
-                varsayilan_gun = 0
-                
-    if tur_secimi == "Gider" and varsayilan_gun > 0:
-        oneri_tarih = tarih_onerisi_hesapla(varsayilan_gun)
-        if oneri_tarih: st.info(f"💡 Otomatik: **{oneri_tarih.strftime('%d.%m.%Y')}**")
+            try: varsayilan_gun = int(float(row.iloc[0]["VarsayilanGun"]))
+            except: varsayilan_gun = 0
+    
+    # Kaydedilecek Tarihi Hesapla
+    # Eğer kategorinin günü varsa (Örn: 15'i) -> 15 Ekim 2025
+    # Yoksa -> 1 Ekim 2025
+    kayit_tarihi = tarih_olustur(yil_secimi, ay_secimi, varsayilan_gun)
+    
+    # Bilgilendirme
+    if secilen_kat:
+        gun_mesaji = f"Ayın {varsayilan_gun}. günü" if varsayilan_gun > 0 else "Ayın 1. günü"
+        st.caption(f"📅 Kayıt Tarihi: **{kayit_tarihi.strftime('%d.%m.%Y')}** ({gun_mesaji})")
+
+    # Son Ödeme Tarihi Hesapla
+    son_odeme_oneri = son_odeme_hesapla(kayit_tarihi, varsayilan_gun)
 
     with st.form("islem_formu", clear_on_submit=True):
-        giris_tarihi = st.date_input("İşlem Tarihi", date.today())
         tutar = st.number_input("Tutar (TL)", min_value=0.0, step=50.0)
         aciklama = st.text_input("Açıklama")
-        son_odeme = st.date_input("Son Ödeme", value=oneri_tarih)
+        
+        # Son ödeme tarihini yine de değiştirebilsin
+        son_odeme = st.date_input("Son Ödeme Tarihi", value=son_odeme_oneri)
+        
         if st.form_submit_button("KAYDET", type="primary"):
             if secilen_kat and tutar > 0:
                 yeni = pd.DataFrame([{
-                    "Tarih": pd.to_datetime(giris_tarihi),
-                    "Kategori": secilen_kat, "Tür": tur_secimi, "Tutar": float(tutar),
-                    "Son Ödeme Tarihi": son_odeme, "Açıklama": aciklama, "Durum": False
+                    "Tarih": pd.to_datetime(kayit_tarihi), # Hesaplanan dönem tarihi
+                    "Kategori": secilen_kat, 
+                    "Tür": tur_secimi, 
+                    "Tutar": float(tutar),
+                    "Son Ödeme Tarihi": son_odeme, 
+                    "Açıklama": aciklama, 
+                    "Durum": False
                 }])
                 try:
                     df_final = pd.concat([df, yeni], ignore_index=True)
                     verileri_kaydet(df_final)
-                    st.success("Kaydedildi!")
+                    st.success(f"✅ {ay_secimi} {yil_secimi} dönemine kaydedildi!")
                     st.cache_data.clear()
                     st.rerun()
                 except Exception as e: st.error(f"Kayıt Hatası: {e}")
@@ -230,8 +281,11 @@ with col_sag:
                     fig2.update_traces(texttemplate='%{text:.2s}', textposition='outside')
                     st.plotly_chart(fig2, use_container_width=True)
                 else: st.info("Veri yok")
+        else: st.info("Bu dönemde gider kaydı yok.")
+            
     with tab_liste:
         if not df_filt.empty and "Tarih" in df_filt.columns:
+            # Editörde tarihleri gösterelim ki karışıklık olmasın
             edt = df_filt.sort_values("Tarih", ascending=False).copy()
             edt["Tarih"] = edt["Tarih"].dt.date
             if "Son Ödeme Tarihi" in edt.columns:
