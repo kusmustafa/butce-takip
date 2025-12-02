@@ -5,7 +5,7 @@ from datetime import datetime, date
 from streamlit_gsheets import GSheetsConnection
 
 # --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v23", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v24", page_icon="🐦", layout="wide")
 
 # --- BAĞLANTIYI KUR ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -28,30 +28,18 @@ def verileri_cek():
         return pd.DataFrame(columns=KOLONLAR)
 
 def kategorileri_cek():
-    # GÜVENLİK GÜNCELLEMESİ (v23):
-    # Hata durumunda asla üzerine yazma!
     varsayilan = pd.DataFrame([
         {"Kategori": "Maaş", "Tur": "Gelir", "VarsayilanGun": 0},
         {"Kategori": "Market", "Tur": "Gider", "VarsayilanGun": 0}
     ])
-    
     try:
         df = conn.read(worksheet="Kategoriler", ttl=0)
-        
-        # Eğer okuma başarılı ama tablo gerçekten boşsa:
         if df.empty:
             conn.update(worksheet="Kategoriler", data=varsayilan)
             return varsayilan
-            
-        # Eğer kolonlar eksikse:
-        if "Kategori" not in df.columns:
-            return varsayilan
-            
+        if "Kategori" not in df.columns: return varsayilan
         return df.dropna(how="all")
-        
-    except Exception as e:
-        # Hata varsa SAKIN SİLME, sadece geçici olarak varsayılanı göster
-        st.toast(f"Kategoriler anlık olarak okunamadı, bağlantıyı kontrol et. (Verilerin güvende)", icon="⚠️")
+    except:
         return varsayilan
 
 def verileri_kaydet(df):
@@ -64,17 +52,23 @@ def verileri_kaydet(df):
     conn.update(worksheet="Veriler", data=save_df[KOLONLAR])
 
 def kategorileri_kaydet(df):
-    # Sadece yeni kategori eklendiğinde çalışır
     conn.update(worksheet="Kategoriler", data=df)
 
 def tarih_onerisi_hesapla(gun):
-    if not gun or gun == 0: return None
+    # ValueError Koruması: Gelen veri ne olursa olsun (str, float, None) güvenle işle
+    if not gun: return None
+    try:
+        h_gun = int(float(gun)) # "15.0" gelirse önce float yap sonra int yap
+        if h_gun == 0: return None
+    except:
+        return None
+
     bugun = date.today()
-    try: h_gun = int(gun)
-    except: return None
     if not (1 <= h_gun <= 31): return None
+    
     try: bu_ay = date(bugun.year, bugun.month, h_gun)
     except: bu_ay = date(bugun.year, bugun.month, 28)
+    
     if bu_ay >= bugun: return bu_ay
     else:
         s_ay = bugun.month + 1 if bugun.month < 12 else 1
@@ -108,7 +102,6 @@ with st.sidebar:
         st.rerun()
     st.divider()
     
-    # Dönem Filtresi
     if not df.empty and "Tarih" in df.columns:
         yil_list = sorted(df["Tarih"].dt.year.unique(), reverse=True)
         secenekler = ["Tüm Zamanlar"] + list(yil_list)
@@ -136,25 +129,22 @@ with st.sidebar:
             y_gun = st.number_input("Gün", 0, 31, 0)
             kat_btn = st.form_submit_button("Ekle")
             if kat_btn and y_ad:
-                # Önce mevcut kategorilerin en güncel halini al (Üzerine yazmamak için)
                 try:
                     guncel_kat = conn.read(worksheet="Kategoriler", ttl=0)
-                except:
-                    guncel_kat = df_kat
+                except: guncel_kat = df_kat
                 
-                # Çakışma kontrolü
                 if y_ad not in guncel_kat["Kategori"].values:
+                    # Yeni kategoriyi ekle
                     yeni = pd.DataFrame([{"Kategori": y_ad, "Tur": y_tur, "VarsayilanGun": y_gun if y_tur=="Gider" else 0}])
                     guncel_kat = pd.concat([guncel_kat, yeni], ignore_index=True)
                     kategorileri_kaydet(guncel_kat)
                     st.success(f"{y_ad} eklendi!")
                     st.cache_data.clear()
                     st.rerun()
-                else:
-                    st.warning("Bu kategori zaten var.")
+                else: st.warning("Bu kategori zaten var.")
 
 # --- SAYFA İÇERİĞİ ---
-st.title("☁️ Kuşların Bütçe Makinesi v23")
+st.title("☁️ Kuşların Bütçe Makinesi v24")
 st.caption(f"Rapor: **{baslik}** | Kayıt Yeri: **Google Sheets**")
 
 if not df_filt.empty:
@@ -181,10 +171,19 @@ with col_sol:
     kat_listesi = df_kat[df_kat["Tur"] == tur_secimi]["Kategori"].tolist() if not df_kat.empty else []
     secilen_kat = st.selectbox("Kategori", kat_listesi, index=None, placeholder="Kategori Seçiniz...")
     
-    varsayilan_gun = 0; oneri_tarih = None
+    # --- VALUE ERROR FIX ---
+    varsayilan_gun = 0
+    oneri_tarih = None
     if secilen_kat and not df_kat.empty:
         row = df_kat[df_kat["Kategori"] == secilen_kat]
-        if not row.empty: varsayilan_gun = int(row.iloc[0]["VarsayilanGun"])
+        if not row.empty:
+            try:
+                # Gelen veriyi (str, float, int) zorla int'e çevir, hata verirse 0 yap
+                raw_val = row.iloc[0]["VarsayilanGun"]
+                varsayilan_gun = int(float(raw_val))
+            except:
+                varsayilan_gun = 0
+                
     if tur_secimi == "Gider" and varsayilan_gun > 0:
         oneri_tarih = tarih_onerisi_hesapla(varsayilan_gun)
         if oneri_tarih: st.info(f"💡 Otomatik: **{oneri_tarih.strftime('%d.%m.%Y')}**")
