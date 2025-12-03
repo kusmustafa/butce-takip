@@ -1,11 +1,35 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from streamlit_gsheets import GSheetsConnection
+import time
 
-# --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v26", page_icon="🐦", layout="wide")
+# --- 1. GÜVENLİK KONTROLÜ (KAPI) ---
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v27", page_icon="🐦", layout="wide")
+
+def giris_kontrol():
+    if "giris_yapildi" not in st.session_state:
+        st.session_state.giris_yapildi = False
+
+    if not st.session_state.giris_yapildi:
+        st.markdown("## 🔒 Bütçe Koruması")
+        sifre = st.text_input("Giriş Şifresi:", type="password")
+        if st.button("Giriş Yap"):
+            # Secrets'tan şifreyi kontrol et
+            dogru_sifre = st.secrets["genel"]["sifre"]
+            if sifre == dogru_sifre:
+                st.session_state.giris_yapildi = True
+                st.success("Giriş Başarılı!")
+                st.rerun()
+            else:
+                st.error("Hatalı Şifre!")
+        st.stop() # Şifre doğru değilse kodun devamını okuma
+
+# Kapıyı çalıştır
+giris_kontrol()
+
+# --- BURADAN SONRASI SADECE GİRİŞ YAPANLARA GÖRÜNÜR ---
 
 # --- BAĞLANTIYI KUR ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -84,6 +108,10 @@ with st.sidebar:
     if st.button("🔄 Verileri Yenile"): st.cache_data.clear(); st.rerun()
     st.divider()
     
+    # DÖNEM SEÇİMİ
+    secilen_yil_filtre = datetime.now().year
+    secilen_ay_filtre = "Yılın Tamamı"
+    
     if not df.empty and "Tarih" in df.columns:
         yil_list = sorted(df["Tarih"].dt.year.unique(), reverse=True)
         if datetime.now().year not in yil_list: yil_list.insert(0, datetime.now().year)
@@ -92,6 +120,7 @@ with st.sidebar:
         
         if secilen_yil_filtre == "Tüm Zamanlar":
             df_filt = df; baslik = "Tüm Zamanlar"
+            ay_no = 0
         else:
             df_filt = df[df["Tarih"].dt.year == secilen_yil_filtre]
             now = datetime.now()
@@ -102,15 +131,85 @@ with st.sidebar:
                 ay_no = AYLAR.index(secilen_ay_filtre) + 1
                 df_filt = df_filt[df_filt["Tarih"].dt.month == ay_no]
                 baslik = f"{secilen_ay_filtre} {secilen_yil_filtre}"
-            else: baslik = f"{secilen_yil_filtre} Tamamı"
-    else: df_filt = df; baslik = "Veri Yok"
+            else: 
+                baslik = f"{secilen_yil_filtre} Tamamı"
+                ay_no = 0
+    else: df_filt = df; baslik = "Veri Yok"; ay_no = 0
+
+    # --- SİHİRLİ BUTON: GEÇEN AYI KOPYALA ---
+    st.divider()
+    with st.expander("🛠️ Toplu İşlemler (Sihirbaz)"):
+        st.caption("Seçili olan ayın içine, BİR ÖNCEKİ AYIN sabit giderlerini kopyalar.")
+        
+        if secilen_ay_filtre != "Yılın Tamamı" and secilen_yil_filtre != "Tüm Zamanlar":
+            kopyala_btn = st.button("⏮️ Geçen Ayın Giderlerini Kopyala")
+            if kopyala_btn:
+                # 1. Hedef Tarih (Seçili Ay)
+                hedef_yil = secilen_yil_filtre
+                hedef_ay = ay_no
+                
+                # 2. Kaynak Tarih (Bir Önceki Ay)
+                if hedef_ay == 1:
+                    kaynak_ay = 12
+                    kaynak_yil = hedef_yil - 1
+                else:
+                    kaynak_ay = hedef_ay - 1
+                    kaynak_yil = hedef_yil
+                
+                # 3. Kaynak Veriyi Bul (Sadece Giderler ve Varsayılan Günü > 0 olanlar)
+                kaynak_df = df[
+                    (df["Tarih"].dt.year == kaynak_yil) & 
+                    (df["Tarih"].dt.month == kaynak_ay) &
+                    (df["Tür"] == "Gider")
+                ]
+                
+                # 4. Filtrele: Sadece "Sabit" giderler (Varsayılan Günü 0 olmayanlar)
+                # Bunun için kategorilerle birleştirmemiz lazım veya basitçe varsayalım
+                # Şimdilik basitçe: Tüm giderleri al, kullanıcı fazlaları siler.
+                
+                if not kaynak_df.empty:
+                    kopya_liste = []
+                    for _, row in kaynak_df.iterrows():
+                        # Sadece "Sabit" giderleri bulmak için kategorilere bak
+                        # Eğer kategori listesinde varsayılan günü > 0 ise kopyala
+                        kat_bilgi = df_kat[df_kat["Kategori"] == row["Kategori"]]
+                        if not kat_bilgi.empty:
+                            v_gun = int(float(kat_bilgi.iloc[0]["VarsayilanGun"]))
+                            if v_gun > 0:
+                                # Yeni satır oluştur
+                                yeni_tarih = tarih_olustur(hedef_yil, secilen_ay_filtre, v_gun)
+                                yeni_son_odeme = son_odeme_hesapla(yeni_tarih, v_gun)
+                                
+                                kopya_liste.append({
+                                    "Tarih": pd.to_datetime(yeni_tarih),
+                                    "Kategori": row["Kategori"],
+                                    "Tür": "Gider",
+                                    "Tutar": row["Tutar"],
+                                    "Son Ödeme Tarihi": yeni_son_odeme,
+                                    "Açıklama": f"{row['Açıklama']} (Otomatik)",
+                                    "Durum": False # Yeni ayda ödenmedi olarak başlar
+                                })
+                    
+                    if len(kopya_liste) > 0:
+                        yeni_df = pd.DataFrame(kopya_liste)
+                        df_final = pd.concat([df, yeni_df], ignore_index=True)
+                        verileri_kaydet(df_final)
+                        st.success(f"✅ Geçen aydan {len(kopya_liste)} adet sabit gider kopyalandı!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.warning("Geçen ay kopyalanacak 'Sabit Gider' (Varsayılan günü > 0 olan) bulunamadı.")
+                else:
+                    st.error(f"Kaynak dönemde ({kaynak_ay}/{kaynak_yil}) hiç gider yok.")
+        else:
+            st.info("Lütfen önce yukarıdan belirli bir AY seçin.")
 
     st.divider()
     with st.expander("Kategori Ekle"):
         with st.form("kategori_form", clear_on_submit=True):
             y_tur = st.radio("Tip", ["Gider", "Gelir"], horizontal=True)
             y_ad = st.text_input("Kategori Adı")
-            y_gun = st.number_input("Varsayılan Gün", 0, 31, 0)
+            y_gun = st.number_input("Varsayılan Gün", 0, 31, 0, help="0'dan büyükse SABİT GİDER sayılır ve kopyalanır.")
             kat_btn = st.form_submit_button("Ekle")
             if kat_btn and y_ad:
                 try: guncel_kat = conn.read(worksheet="Kategoriler", ttl=0)
@@ -123,17 +222,42 @@ with st.sidebar:
                 else: st.warning("Zaten var.")
 
 # --- SAYFA İÇERİĞİ ---
-st.title("☁️ Kuşların Bütçe Makinesi v26")
-st.caption(f"Rapor: **{baslik}** | Mod: **Analiz Dashboard**")
+st.title("☁️ Kuşların Bütçe Makinesi v27")
+st.caption(f"Rapor: **{baslik}** | Mod: **Güvenli & Akıllı**")
 
+# --- HESAPLAMALAR & TRENDLER (V27) ---
 if not df_filt.empty:
     gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
     gider = df_filt[df_filt["Tür"] == "Gider"]["Tutar"].sum()
     net = gelir - gider
     bekleyen = df_filt[(df_filt["Tür"]=="Gider") & (df_filt["Durum"]==False)]["Tutar"].sum()
+    
+    # TREND HESAPLAMA (GEÇEN AY İLE KIYASLA)
+    delta_gelir = None
+    delta_gider = None
+    
+    if secilen_ay_filtre != "Yılın Tamamı" and secilen_yil_filtre != "Tüm Zamanlar":
+        # Önceki ayı bul
+        h_yil = secilen_yil_filtre
+        h_ay = ay_no
+        if h_ay == 1:
+            p_ay = 12; p_yil = h_yil - 1
+        else:
+            p_ay = h_ay - 1; p_yil = h_yil
+            
+        # Önceki ay verileri
+        prev_df = df[(df["Tarih"].dt.year == p_yil) & (df["Tarih"].dt.month == p_ay)]
+        if not prev_df.empty:
+            p_gelir = prev_df[prev_df["Tür"] == "Gelir"]["Tutar"].sum()
+            p_gider = prev_df[prev_df["Tür"] == "Gider"]["Tutar"].sum()
+            
+            delta_gelir = gelir - p_gelir
+            delta_gider = gider - p_gider # Giderin artması kötü (inverse)
+            
+    # GÖSTERGE PANELLERİ
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Gelir", f"{gelir:,.0f} ₺")
-    k2.metric("Gider", f"{gider:,.0f} ₺")
+    k1.metric("Gelir", f"{gelir:,.0f} ₺", delta=f"{delta_gelir:,.0f} ₺" if delta_gelir is not None else None)
+    k2.metric("Gider", f"{gider:,.0f} ₺", delta=f"{delta_gider:,.0f} ₺" if delta_gider is not None else None, delta_color="inverse")
     k3.metric("Net", f"{net:,.0f} ₺", delta_color="normal" if net > 0 else "inverse")
     k4.metric("Ödenmemiş", f"{bekleyen:,.0f} ₺", delta_color="inverse")
 else: st.info("Kayıt yok.")
@@ -184,17 +308,14 @@ with col_sol:
             else: st.error("Eksik bilgi!")
 
 with col_sag:
-    # --- YENİ DASHBOARD TASARIMI ---
-    tab_grafik, tab_liste = st.tabs(["📊 Özet Dashboard", "📋 Düzenle"])
+    tab_grafik, tab_liste = st.tabs(["📊 Dashboard", "📋 Düzenle"])
     
     with tab_grafik:
         if not df_filt.empty and "Gider" in df_filt["Tür"].values:
             sub_gider = df_filt[df_filt["Tür"] == "Gider"].copy()
             sub_gider["Durum_Etiket"] = sub_gider["Durum"].map({True: "Ödendi ✅", False: "Ödenmedi ❌"})
             
-            # --- 1. SIRA: İKİ TANE PASTA GRAFİĞİ YAN YANA ---
             c_g1, c_g2 = st.columns(2)
-            
             with c_g1:
                 st.markdown("##### 1. Ödeme Durumu")
                 fig1 = px.pie(sub_gider, values="Tutar", names="Durum_Etiket", hole=0.4,
@@ -203,29 +324,20 @@ with col_sag:
                 fig1.update_layout(height=250, margin=dict(t=30, b=0, l=0, r=0), showlegend=False)
                 fig1.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig1, use_container_width=True)
-                
             with c_g2:
                 st.markdown("##### 2. Nereye Harcandı?")
-                # Bar yerine Pasta Grafiği (Kategoriler)
-                fig2 = px.pie(sub_gider, values="Tutar", names="Kategori", hole=0.4, title="")
+                fig2 = px.pie(sub_gider, values="Tutar", names="Kategori", hole=0.4)
                 fig2.update_layout(height=250, margin=dict(t=30, b=0, l=0, r=0), showlegend=False)
                 fig2.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig2, use_container_width=True)
 
-            # --- 2. SIRA: ÖNERİ GRAFİĞİ (ZAMAN ÇİZELGESİ) ---
             st.divider()
             st.markdown("##### 3. Harcama Zamanlaması (Trend)")
-            
-            # Veriyi tarihe göre grupla
             trend_data = sub_gider.groupby("Tarih")["Tutar"].sum().reset_index().sort_values("Tarih")
-            
-            # Area Chart (Alan Grafiği) - Altı dolu çizgi
             fig3 = px.area(trend_data, x="Tarih", y="Tutar", markers=True)
-            fig3.update_layout(height=300, margin=dict(t=10, b=0, l=0, r=0), 
-                             xaxis_title="", yaxis_title="Tutar (TL)")
-            fig3.update_traces(line_color="#FF4B4B") # Streamlit kırmızısı
+            fig3.update_layout(height=300, margin=dict(t=10, b=0, l=0, r=0), xaxis_title="", yaxis_title="Tutar (TL)")
+            fig3.update_traces(line_color="#FF4B4B")
             st.plotly_chart(fig3, use_container_width=True)
-
         else: st.info("Grafik için yeterli gider kaydı yok.")
             
     with tab_liste:
