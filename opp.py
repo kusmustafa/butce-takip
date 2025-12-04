@@ -6,13 +6,12 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # --- 1. GÜVENLİK KONTROLÜ ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v28", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v29", page_icon="🐦", layout="wide")
 
 def giris_kontrol():
     if "giris_yapildi" not in st.session_state:
         st.session_state.giris_yapildi = False
 
-    # Secrets dosyasında şifre yoksa direkt geç (Geliştirme modu)
     if "genel" not in st.secrets:
         st.session_state.giris_yapildi = True
         return
@@ -111,18 +110,15 @@ with st.sidebar:
     st.header("⚙️ Ayarlar")
     if st.button("🔄 Verileri Yenile"): st.cache_data.clear(); st.rerun()
     
-    # --- YENİ ÖZELLİK: YEDEK İNDİRME ---
     st.download_button(
         label="📥 Tüm Verileri İndir (Excel/CSV)",
         data=csv_indir(df),
         file_name=f"Butce_Yedek_{datetime.now().strftime('%d_%m_%Y')}.csv",
-        mime='text/csv',
-        help="İndirdiğin bu dosyayı Excel ile açabilirsin."
+        mime='text/csv'
     )
     
     st.divider()
     
-    # DÖNEM SEÇİMİ
     secilen_yil_filtre = datetime.now().year
     secilen_ay_filtre = "Yılın Tamamı"
     
@@ -150,7 +146,6 @@ with st.sidebar:
 
     st.divider()
     
-    # --- SİHİRLİ BUTON: GEÇEN AYI KOPYALA ---
     with st.expander("🛠️ Toplu İşlemler"):
         if secilen_ay_filtre != "Yılın Tamamı" and secilen_yil_filtre != "Tüm Zamanlar":
             if st.button("⏮️ Geçen Ayı Kopyala"):
@@ -181,7 +176,7 @@ with st.sidebar:
                 else: st.error("Geçen ay veri yok.")
         else: st.info("Kopyalama için bir AY seçmelisin.")
 
-    # --- YENİ ÖZELLİK: KATEGORİ YÖNETİMİ ---
+    # --- KATEGORİ YÖNETİMİ (v29 GÜNCELLEMESİ) ---
     st.divider()
     with st.expander("📂 Kategori Yönetimi"):
         tab_ekle, tab_duzenle = st.tabs(["Ekle", "Düzenle/Sil"])
@@ -203,27 +198,58 @@ with st.sidebar:
         with tab_duzenle:
             if not df_kat.empty:
                 kat_listesi_duzenle = df_kat["Kategori"].tolist()
-                secilen_kat_duzenle = st.selectbox("Kategori Seç", kat_listesi_duzenle)
+                secilen_kat_duzenle = st.selectbox("Düzenlenecek Kategori", kat_listesi_duzenle)
                 
                 # Seçilen kategorinin bilgilerini bul
                 secili_row = df_kat[df_kat["Kategori"] == secilen_kat_duzenle].iloc[0]
                 
-                st.info(f"Mevcut Ayar: {secili_row['Tur']} | Gün: {secili_row['VarsayilanGun']}")
+                st.markdown("---")
+                # Düzenleme Formu
+                d_ad = st.text_input("Kategori Adı", value=secili_row['Kategori'])
+                d_tur = st.selectbox("Tür", ["Gider", "Gelir"], index=0 if secili_row['Tur'] == "Gider" else 1)
+                d_gun = st.number_input("Varsayılan Gün", 0, 31, int(float(secili_row['VarsayilanGun'])))
                 
-                c_sil, c_bos = st.columns([1, 1])
-                with c_sil:
-                    if st.button("🗑️ Bu Kategoriyi Sil"):
-                        # GÜVENLİK KONTROLÜ: Verilerde kullanılmış mı?
-                        if secilen_kat_duzenle in df["Kategori"].values:
-                            st.error("⛔ Bu kategoride kayıtlı harcamalar var! Önce onları silmelisin.")
+                c_guncelle, c_sil = st.columns(2)
+                
+                with c_guncelle:
+                    if st.button("💾 Güncelle", use_container_width=True):
+                        # İsim değişikliği var mı?
+                        eski_ad = secilen_kat_duzenle
+                        yeni_ad = d_ad
+                        
+                        # Eğer isim değiştiyse ve yeni isim zaten varsa hata ver
+                        if eski_ad != yeni_ad and yeni_ad in df_kat["Kategori"].values:
+                            st.error("Bu isimde başka bir kategori zaten var!")
                         else:
-                            # Silme işlemi
+                            # 1. Kategoriler tablosunu güncelle
+                            df_kat.loc[df_kat["Kategori"] == eski_ad, ["Kategori", "Tur", "VarsayilanGun"]] = [yeni_ad, d_tur, d_gun]
+                            kategorileri_kaydet(df_kat)
+                            
+                            # 2. Eğer isim değiştiyse, ESKİ KAYITLARI DA GÜNCELLE (Cascading Update)
+                            if eski_ad != yeni_ad and not df.empty:
+                                df.loc[df["Kategori"] == eski_ad, "Kategori"] = yeni_ad
+                                verileri_kaydet(df)
+                                st.success(f"Kategori ve geçmiş kayıtlar '{yeni_ad}' olarak güncellendi!")
+                            else:
+                                st.success("Güncellendi!")
+                            
+                            st.cache_data.clear()
+                            time.sleep(1)
+                            st.rerun()
+
+                with c_sil:
+                    if st.button("🗑️ Sil", type="primary", use_container_width=True):
+                        if secilen_kat_duzenle in df["Kategori"].values:
+                            st.error("Bu kategoride kayıtlar var! Önce onları silmelisin.")
+                        else:
                             yeni_df_kat = df_kat[df_kat["Kategori"] != secilen_kat_duzenle]
                             kategorileri_kaydet(yeni_df_kat)
-                            st.success("Silindi!"); st.cache_data.clear(); st.rerun()
+                            st.success("Silindi!")
+                            st.cache_data.clear()
+                            st.rerun()
 
 # --- SAYFA İÇERİĞİ ---
-st.title("☁️ Kuşların Bütçe Makinesi v28")
+st.title("☁️ Kuşların Bütçe Makinesi v29")
 st.caption(f"Rapor: **{baslik}**")
 
 if not df_filt.empty:
