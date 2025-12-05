@@ -8,18 +8,15 @@ import re
 import yfinance as yf
 
 # --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v34", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v35", page_icon="🐦", layout="wide")
 
-# --- CUSTOM CSS (TASARIM SİHİRBAZLIĞI) ---
+# --- CUSTOM CSS ---
 st.markdown("""
 <style>
-    /* Ana sayfa üst boşluğunu azalt */
     .block-container {
         padding-top: 1.5rem;
         padding-bottom: 1rem;
     }
-    
-    /* GİZLİ CSS: Metrik Kartları için */
     div.kpi-card {
         background-color: white;
         border-radius: 10px;
@@ -44,16 +41,8 @@ st.markdown("""
         font-weight: 700;
         margin-bottom: 0;
     }
-    
-    /* Yenile Butonu Stili (Sağ Üst) */
-    .refresh-btn {
-        text-align: right;
-    }
-    
-    /* Sidebar düzenlemeleri */
-    [data-testid="stSidebar"] {
-        background-color: #f8f9fa;
-    }
+    .refresh-btn { text-align: right; }
+    [data-testid="stSidebar"] { background-color: #f8f9fa; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -61,7 +50,7 @@ st.markdown("""
 RENK_GELIR = "#28a745" # Yeşil
 RENK_GIDER = "#dc3545" # Kırmızı
 RENK_NET = "#007bff"   # Mavi
-RENK_ODENMEMIS = "#ffc107" # Sarı/Turuncu
+RENK_ODENMEMIS = "#ffc107" # Sarı
 
 # --- GÜVENLİK ---
 def giris_kontrol():
@@ -87,7 +76,6 @@ AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağu
 
 # --- YARDIMCI FONKSİYONLAR ---
 def kpi_kart_ciz(baslik, deger, renk, ikon):
-    """HTML ile özel, renkli ve kesilmeyen kart çizer"""
     st.markdown(f"""
     <div class="kpi-card" style="border-left: 5px solid {renk};">
         <div class="kpi-title">{ikon} {baslik}</div>
@@ -178,15 +166,11 @@ if not df.empty:
     if "Tutar" in df.columns: df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
     else: df["Tutar"] = 0.0
 
-# --- ÜST BAŞLIK ve YENİLEME BUTONU ---
+# --- ÜST BAŞLIK ---
 col_header, col_refresh = st.columns([8, 1])
-with col_header:
-    st.markdown("### 🐦 Kuşların Bütçe Makinesi")
+with col_header: st.markdown("### 🐦 Kuşların Bütçe Makinesi")
 with col_refresh:
-    if st.button("↻", help="Verileri Yenile"):
-        st.cache_data.clear()
-        st.rerun()
-
+    if st.button("↻", help="Verileri Yenile"): st.cache_data.clear(); st.rerun()
 st.markdown("---")
 
 # --- YAN MENÜ ---
@@ -194,7 +178,6 @@ with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=50)
     st.caption("Yönetim Paneli")
     
-    # 1. Filtreler
     arama_terimi = st.text_input("🔍 Ara...", placeholder="Migros, Tatil...")
     
     if not arama_terimi:
@@ -222,8 +205,6 @@ with st.sidebar:
         ay_no = 0
 
     st.markdown("---")
-    
-    # 2. Araçlar (Yedek & Kopyala)
     with st.expander("🛠️ Araçlar"):
         st.download_button("📥 Excel İndir", csv_indir(df), f"Yedek.csv", "text/csv", use_container_width=True)
         if not arama_terimi and secilen_ay_filtre != "Yılın Tamamı":
@@ -245,32 +226,41 @@ with st.sidebar:
                     else: st.warning("Sabit yok.")
                 else: st.error("Veri yok.")
 
-    # 3. PİYASA VERİLERİ (EN ALTA ALINDI VE KÜÇÜLTÜLDÜ)
-    st.write("") # Boşluk
-    st.write("")
-    st.markdown("---")
+    st.write(""); st.write(""); st.markdown("---")
     usd, eur, gram = piyasa_verileri_getir()
     if usd > 0:
-        # Alt alta küçük metrikler
         col_p1, col_p2, col_p3 = st.columns(3)
         col_p1.markdown(f"<div style='font-size:12px; color:grey'>USD</div><div style='font-weight:bold'>{usd:.2f}</div>", unsafe_allow_html=True)
         col_p2.markdown(f"<div style='font-size:12px; color:grey'>EUR</div><div style='font-weight:bold'>{eur:.2f}</div>", unsafe_allow_html=True)
-        col_p3.markdown(f"<div style='font-size:12px; color:grey'>GR.A</div><div style='font-weight:bold'>{gram:.0f}</div>", unsafe_allow_html=True)
+        col_p3.markdown(f"<div style='font-size:12px; color:grey'>ALTIN</div><div style='font-weight:bold'>{gram:.0f}</div>", unsafe_allow_html=True)
     
     if st.button("🚪 Çıkış", use_container_width=True): st.session_state.giris_yapildi = False; st.rerun()
 
-# --- ANA EKRAN: KARTLAR (HTML) ---
+# --- ANA EKRAN ---
 if not df_filt.empty:
     gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
     gider = df_filt[df_filt["Tür"] == "Gider"]["Tutar"].sum()
     net = gelir - gider
     bekleyen = df_filt[(df_filt["Tür"]=="Gider") & (df_filt["Durum"]==False)]["Tutar"].sum()
     
-    # 4 SÜTUNLU KART YAPISI
+    # --- NET DURUM EMOJİ MANTIĞI (YENİ) ---
+    if net > 0:
+        net_ikon = "😃"
+        net_renk = RENK_GELIR
+    elif net < 0:
+        net_ikon = "☹️"
+        net_renk = RENK_GIDER
+    else:
+        net_ikon = "😐"
+        net_renk = RENK_NET
+
     k1, k2, k3, k4 = st.columns(4)
     with k1: kpi_kart_ciz("GELİR", f"{gelir:,.0f} ₺", RENK_GELIR, "💰")
     with k2: kpi_kart_ciz("GİDER", f"{gider:,.0f} ₺", RENK_GIDER, "💸")
-    with k3: kpi_kart_ciz("NET DURUM", f"{net:,.0f} ₺", RENK_NET, "📊")
+    
+    # Emojili ve Renkli Net Durum
+    with k3: kpi_kart_ciz("NET DURUM", f"{net:,.0f} ₺", net_renk, net_ikon)
+    
     with k4: kpi_kart_ciz("ÖDENMEMİŞ", f"{bekleyen:,.0f} ₺", RENK_ODENMEMIS, "⏳")
 else:
     st.info("Bu dönemde veri yok.")
@@ -287,22 +277,17 @@ with tab_giris:
         with st.container(border=True):
             c_top1, c_top2 = st.columns([1, 1])
             with c_top1:
-                # Kategori ve Tarih Bloğu
                 c_y, c_m = st.columns(2)
                 cur_y = datetime.now().year; cur_m = datetime.now().month
                 y_sec = c_y.selectbox("Yıl", range(cur_y-1, cur_y+2), index=1, label_visibility="collapsed")
                 m_sec = c_m.selectbox("Ay", AYLAR, index=cur_m-1, label_visibility="collapsed")
-                
                 tur_sec = st.radio("Tür", ["Gider", "Gelir"], horizontal=True)
                 kat_list = df_kat[df_kat["Tur"] == tur_sec]["Kategori"].tolist() if not df_kat.empty else []
                 kat_sec = st.selectbox("Kategori", kat_list, index=None, placeholder="Kategori Seç...")
-                
+            
             with c_top2:
-                # Tutar ve Açıklama Bloğu
                 tutar_gir = st.number_input("Tutar (TL)", min_value=0.0, step=50.0)
                 aciklama_gir = st.text_input("Açıklama", placeholder="#etiket (Opsiyonel)")
-                
-                # Tarih Hesapla
                 vg = 0
                 if kat_sec and not df_kat.empty:
                     r = df_kat[df_kat["Kategori"]==kat_sec]
@@ -322,13 +307,10 @@ with tab_analiz:
     if not df_filt.empty and "Gider" in df_filt["Tür"].values:
         sg = df_filt[df_filt["Tür"]=="Gider"].copy()
         sg["Durum_Etiket"] = sg["Durum"].map({True: "Ödendi ✅", False: "Ödenmedi ❌"})
-        
         c_g1, c_g2 = st.columns(2)
         with c_g1:
             st.caption("Ödeme Durumu")
-            # Renkleri sabitleyelim
-            color_map = {"Ödendi ✅": RENK_GELIR, "Ödenmedi ❌": RENK_GIDER}
-            fig1 = px.pie(sg, values="Tutar", names="Durum_Etiket", hole=0.5, color="Durum_Etiket", color_discrete_map=color_map)
+            fig1 = px.pie(sg, values="Tutar", names="Durum_Etiket", hole=0.5, color="Durum_Etiket", color_discrete_map={"Ödendi ✅": RENK_GELIR, "Ödenmedi ❌": RENK_GIDER})
             fig1.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=250)
             st.plotly_chart(fig1, use_container_width=True)
         with c_g2:
@@ -336,7 +318,13 @@ with tab_analiz:
             fig2 = px.pie(sg, values="Tutar", names="Kategori", hole=0.5)
             fig2.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=250)
             st.plotly_chart(fig2, use_container_width=True)
-    else: st.info("Grafik için veri yok.")
+        st.caption("Harcama Trendi")
+        trend_data = sg.groupby("Tarih")["Tutar"].sum().reset_index().sort_values("Tarih")
+        fig3 = px.area(trend_data, x="Tarih", y="Tutar", markers=True)
+        fig3.update_layout(margin=dict(t=10, b=0, l=0, r=0), height=250, xaxis_title="", yaxis_title="")
+        fig3.update_traces(line_color="#FF4B4B", fillcolor="rgba(255, 75, 75, 0.2)")
+        st.plotly_chart(fig3, use_container_width=True)
+    else: st.info("Veri yok.")
 
 # 3. LİSTE
 with tab_liste:
@@ -344,7 +332,6 @@ with tab_liste:
         edt = df_filt.sort_values("Tarih", ascending=False).copy()
         edt["Tarih"] = edt["Tarih"].dt.date
         if "Son Ödeme Tarihi" in edt.columns: edt["Son Ödeme Tarihi"] = pd.to_datetime(edt["Son Ödeme Tarihi"], errors='coerce').dt.date
-        
         if arama_terimi:
             st.dataframe(edt, hide_index=True, use_container_width=True)
         else:
@@ -352,6 +339,7 @@ with tab_liste:
             if st.button("💾 Tabloyu Kaydet", use_container_width=True):
                 dfr = df.drop(df_filt.index); duzenli["Tarih"] = pd.to_datetime(duzenli["Tarih"])
                 verileri_kaydet(pd.concat([dfr, duzenli], ignore_index=True)); st.success("Güncellendi"); st.cache_data.clear(); st.rerun()
+    else: st.write("Veri yok.")
 
 # 4. KATEGORİLER
 with tab_yonetim:
@@ -373,7 +361,6 @@ with tab_yonetim:
             new_ad = st.text_input("Ad", value=row_k['Kategori'])
             new_tur = st.selectbox("Tür", ["Gider", "Gelir"], index=0 if row_k['Tur']=="Gider" else 1)
             new_gun = st.number_input("Gün", 0, 31, int(float(row_k['VarsayilanGun'])))
-            
             c_upd, c_del = st.columns(2)
             if c_upd.button("Güncelle"):
                 df_kat.loc[df_kat["Kategori"]==sel_k, ["Kategori","Tur","VarsayilanGun"]] = [new_ad, new_tur, new_gun]
