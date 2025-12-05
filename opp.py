@@ -5,24 +5,35 @@ from datetime import datetime, date, timedelta
 from streamlit_gsheets import GSheetsConnection
 import time
 import re
-import yfinance as yf # FİNANS KÜTÜPHANESİ
+import yfinance as yf
 
 # --- 1. GÜVENLİK KONTROLÜ ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v31", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v32", page_icon="🐦", layout="wide")
 
 def giris_kontrol():
     if "giris_yapildi" not in st.session_state:
         st.session_state.giris_yapildi = False
+
+    # Secrets yoksa geliştirici modu (açık)
     if "genel" not in st.secrets:
         st.session_state.giris_yapildi = True
         return
+
     if not st.session_state.giris_yapildi:
         st.markdown("## 🔒 Bütçe Koruması")
-        sifre = st.text_input("Giriş Şifresi:", type="password")
-        if st.button("Giriş Yap"):
-            if sifre == st.secrets["genel"]["sifre"]:
-                st.session_state.giris_yapildi = True; st.success("Giriş Başarılı!"); st.rerun()
-            else: st.error("Hatalı Şifre!")
+        c1, c2 = st.columns([2,1])
+        with c1:
+            sifre = st.text_input("Giriş Şifresi:", type="password")
+        with c2:
+            st.write("") # Boşluk
+            st.write("") 
+            if st.button("Giriş Yap", type="primary"):
+                if sifre == st.secrets["genel"]["sifre"]:
+                    st.session_state.giris_yapildi = True
+                    st.success("Giriş Başarılı!")
+                    st.rerun()
+                else:
+                    st.error("Hatalı Şifre!")
         st.stop()
 
 giris_kontrol()
@@ -92,26 +103,26 @@ def etiketleri_analiz_et(df):
     if etiket_verisi: return pd.DataFrame(etiket_verisi).groupby("Etiket")["Tutar"].sum().reset_index().sort_values("Tutar", ascending=False)
     else: return pd.DataFrame()
 
-# --- YENİ: DÖVİZ VE ALTIN ÇEKME FONKSİYONU (Önbellekli) ---
-@st.cache_data(ttl=3600) # 1 saatte bir yenile (Siteyi yavaşlatmasın)
+@st.cache_data(ttl=3600) 
 def piyasa_verileri_getir():
     try:
-        # Ticker Sembolleri (Yahoo Finance Kodları)
-        # TRY=X -> Dolar/TL
-        # EURTRY=X -> Euro/TL
-        # GC=F -> Ons Altın (Dolar bazlı)
         tickers = yf.download("TRY=X EURTRY=X GC=F", period="1d", progress=False)['Close']
-        
         dolar = tickers['TRY=X'].iloc[-1]
         euro = tickers['EURTRY=X'].iloc[-1]
         ons_altin = tickers['GC=F'].iloc[-1]
-        
-        # Gram Altın Hesabı: (Ons Fiyatı / 31.1035) * Dolar Kuru
         gram_altin = (ons_altin / 31.1035) * dolar
-        
         return dolar, euro, gram_altin
     except:
         return 0, 0, 0
+
+# --- YAN MENÜ: GÜNCELLEME BUTONU (EN ÜSTTE) ---
+with st.sidebar:
+    # BU BUTON F5 YERİNE GEÇER
+    if st.button("🔄 Verileri ve Kurları Güncelle", type="primary", use_container_width=True):
+        st.cache_data.clear() # Kurlar yeniden çekilsin diye önbelleği temizle
+        st.rerun()            # Uygulamayı yeniden başlat (Şifre gitmez!)
+    
+    st.divider()
 
 # --- BAŞLATMA ---
 df = verileri_cek()
@@ -126,17 +137,17 @@ if not df.empty:
     if "Tutar" in df.columns: df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
     else: df["Tutar"] = 0.0
 
-# --- YAN MENÜ ---
+# --- YAN MENÜ DEVAMI ---
 with st.sidebar:
-    # --- YENİ: DÖVİZ BİLGİ KARTI ---
+    # DÖVİZ BİLGİ KARTI
     st.header("💰 Piyasa Durumu")
     usd, eur, gram = piyasa_verileri_getir()
     
     if usd > 0:
         c1, c2, c3 = st.columns(3)
-        c1.metric("Dolar", f"{usd:.2f}", help="USD/TRY")
-        c2.metric("Euro", f"{eur:.2f}", help="EUR/TRY")
-        c3.metric("Gr.Altın", f"{gram:.0f}", help="Hesaplanan Teorik Fiyat")
+        c1.metric("Dolar", f"{usd:.2f}")
+        c2.metric("Euro", f"{eur:.2f}")
+        c3.metric("Gr.Altın", f"{gram:.0f}")
         st.caption(f"🕒 Son Güncelleme: {datetime.now().strftime('%H:%M')}")
     else:
         st.warning("Veri çekilemedi.")
@@ -144,7 +155,6 @@ with st.sidebar:
     st.divider()
     
     st.header("⚙️ Ayarlar")
-    if st.button("🔄 Verileri Yenile"): st.cache_data.clear(); st.rerun()
     st.download_button(label="📥 Yedeği İndir", data=csv_indir(df), file_name=f"Yedek_{datetime.now().strftime('%d%m%Y')}.csv", mime='text/csv')
     st.divider()
     
@@ -228,8 +238,13 @@ with st.sidebar:
                         if sk in df["Kategori"].values: st.error("Kayıt var!")
                         else: kategorileri_kaydet(df_kat[df_kat["Kategori"]!=sk]); st.success("Silindi"); st.rerun()
 
+    st.divider()
+    if st.button("🚪 Çıkış Yap"):
+        st.session_state.giris_yapildi = False
+        st.rerun()
+
 # --- İÇERİK ---
-st.title("☁️ Kuşların Bütçe Makinesi v31")
+st.title("☁️ Kuşların Bütçe Makinesi v32")
 st.caption(f"Rapor: **{baslik}**")
 
 if arama_terimi:
