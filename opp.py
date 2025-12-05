@@ -8,7 +8,7 @@ import re
 import yfinance as yf
 
 # --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v35", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v36", page_icon="🐦", layout="wide")
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -76,10 +76,11 @@ AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağu
 
 # --- YARDIMCI FONKSİYONLAR ---
 def kpi_kart_ciz(baslik, deger, renk, ikon):
+    # İKON ARTIK DEĞERİN YANINDA
     st.markdown(f"""
     <div class="kpi-card" style="border-left: 5px solid {renk};">
-        <div class="kpi-title">{ikon} {baslik}</div>
-        <div class="kpi-value" style="color: {renk};">{deger}</div>
+        <div class="kpi-title">{baslik}</div>
+        <div class="kpi-value" style="color: {renk};">{ikon} {deger}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -243,7 +244,7 @@ if not df_filt.empty:
     net = gelir - gider
     bekleyen = df_filt[(df_filt["Tür"]=="Gider") & (df_filt["Durum"]==False)]["Tutar"].sum()
     
-    # --- NET DURUM EMOJİ MANTIĞI (YENİ) ---
+    # Emojiler
     if net > 0:
         net_ikon = "😃"
         net_renk = RENK_GELIR
@@ -258,7 +259,7 @@ if not df_filt.empty:
     with k1: kpi_kart_ciz("GELİR", f"{gelir:,.0f} ₺", RENK_GELIR, "💰")
     with k2: kpi_kart_ciz("GİDER", f"{gider:,.0f} ₺", RENK_GIDER, "💸")
     
-    # Emojili ve Renkli Net Durum
+    # İkon tutarın yanında!
     with k3: kpi_kart_ciz("NET DURUM", f"{net:,.0f} ₺", net_renk, net_ikon)
     
     with k4: kpi_kart_ciz("ÖDENMEMİŞ", f"{bekleyen:,.0f} ₺", RENK_ODENMEMIS, "⏳")
@@ -361,6 +362,7 @@ with tab_yonetim:
             new_ad = st.text_input("Ad", value=row_k['Kategori'])
             new_tur = st.selectbox("Tür", ["Gider", "Gelir"], index=0 if row_k['Tur']=="Gider" else 1)
             new_gun = st.number_input("Gün", 0, 31, int(float(row_k['VarsayilanGun'])))
+            
             c_upd, c_del = st.columns(2)
             if c_upd.button("Güncelle"):
                 df_kat.loc[df_kat["Kategori"]==sel_k, ["Kategori","Tur","VarsayilanGun"]] = [new_ad, new_tur, new_gun]
