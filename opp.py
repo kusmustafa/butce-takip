@@ -8,15 +8,18 @@ import re
 import yfinance as yf
 
 # --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v36", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v37", page_icon="🐦", layout="wide")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS (TASARIM SİHİRBAZLIĞI) ---
 st.markdown("""
 <style>
+    /* Üst boşluğu biraz artırdık ki başlık kesilmesin */
     .block-container {
-        padding-top: 1.5rem;
+        padding-top: 3rem;
         padding-bottom: 1rem;
     }
+    
+    /* KPI Kartları */
     div.kpi-card {
         background-color: white;
         border-radius: 10px;
@@ -26,9 +29,7 @@ st.markdown("""
         margin-bottom: 10px;
         transition: transform 0.2s;
     }
-    div.kpi-card:hover {
-        transform: scale(1.02);
-    }
+    div.kpi-card:hover { transform: scale(1.02); }
     div.kpi-title {
         color: #6c757d;
         font-size: 0.9rem;
@@ -41,7 +42,8 @@ st.markdown("""
         font-weight: 700;
         margin-bottom: 0;
     }
-    .refresh-btn { text-align: right; }
+    
+    /* Sidebar Rengi */
     [data-testid="stSidebar"] { background-color: #f8f9fa; }
 </style>
 """, unsafe_allow_html=True)
@@ -76,7 +78,6 @@ AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağu
 
 # --- YARDIMCI FONKSİYONLAR ---
 def kpi_kart_ciz(baslik, deger, renk, ikon):
-    # İKON ARTIK DEĞERİN YANINDA
     st.markdown(f"""
     <div class="kpi-card" style="border-left: 5px solid {renk};">
         <div class="kpi-title">{baslik}</div>
@@ -167,11 +168,19 @@ if not df.empty:
     if "Tutar" in df.columns: df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
     else: df["Tutar"] = 0.0
 
-# --- ÜST BAŞLIK ---
-col_header, col_refresh = st.columns([8, 1])
-with col_header: st.markdown("### 🐦 Kuşların Bütçe Makinesi")
+# --- DÜZELTİLMİŞ BAŞLIK VE YENİLEME BUTONU ---
+# CSS ile üst boşluğu ayarladık, şimdi kolonları ayarlıyoruz.
+col_header, col_refresh = st.columns([0.85, 0.15], gap="small")
+
+with col_header:
+    st.markdown("### 🐦 Kuşların Bütçe Makinesi")
+
 with col_refresh:
-    if st.button("↻", help="Verileri Yenile"): st.cache_data.clear(); st.rerun()
+    # Butonu biraz daha hizalı göstermek için
+    if st.button("🔄 Yenile", help="Verileri ve Kurları Güncelle", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
 st.markdown("---")
 
 # --- YAN MENÜ ---
@@ -206,8 +215,9 @@ with st.sidebar:
         ay_no = 0
 
     st.markdown("---")
-    with st.expander("🛠️ Araçlar"):
-        st.download_button("📥 Excel İndir", csv_indir(df), f"Yedek.csv", "text/csv", use_container_width=True)
+    
+    # KOPYALAMA ARAÇLARI
+    with st.expander("🛠️ Toplu İşlemler"):
         if not arama_terimi and secilen_ay_filtre != "Yılın Tamamı":
             if st.button("⏮️ Geçen Ayı Kopyala", use_container_width=True):
                 hy = secilen_yil_filtre; ha = ay_no
@@ -226,6 +236,8 @@ with st.sidebar:
                     if kopya: verileri_kaydet(pd.concat([df, pd.DataFrame(kopya)], ignore_index=True)); st.success("Kopyalandı!"); time.sleep(1); st.rerun()
                     else: st.warning("Sabit yok.")
                 else: st.error("Veri yok.")
+        else:
+            st.info("Kopyalama için bir AY seçmelisin.")
 
     st.write(""); st.write(""); st.markdown("---")
     usd, eur, gram = piyasa_verileri_getir()
@@ -244,7 +256,6 @@ if not df_filt.empty:
     net = gelir - gider
     bekleyen = df_filt[(df_filt["Tür"]=="Gider") & (df_filt["Durum"]==False)]["Tutar"].sum()
     
-    # Emojiler
     if net > 0:
         net_ikon = "😃"
         net_renk = RENK_GELIR
@@ -258,10 +269,7 @@ if not df_filt.empty:
     k1, k2, k3, k4 = st.columns(4)
     with k1: kpi_kart_ciz("GELİR", f"{gelir:,.0f} ₺", RENK_GELIR, "💰")
     with k2: kpi_kart_ciz("GİDER", f"{gider:,.0f} ₺", RENK_GIDER, "💸")
-    
-    # İkon tutarın yanında!
     with k3: kpi_kart_ciz("NET DURUM", f"{net:,.0f} ₺", net_renk, net_ikon)
-    
     with k4: kpi_kart_ciz("ÖDENMEMİŞ", f"{bekleyen:,.0f} ₺", RENK_ODENMEMIS, "⏳")
 else:
     st.info("Bu dönemde veri yok.")
@@ -303,7 +311,7 @@ with tab_giris:
                         st.toast("✅ Kaydedildi!"); time.sleep(0.5); st.cache_data.clear(); st.rerun()
                     else: st.warning("Eksik bilgi!")
 
-# 2. GRAFİKLER
+# 2. GRAFİKLER (SADELEŞTİRİLMİŞ)
 with tab_analiz:
     if not df_filt.empty and "Gider" in df_filt["Tür"].values:
         sg = df_filt[df_filt["Tür"]=="Gider"].copy()
@@ -319,16 +327,17 @@ with tab_analiz:
             fig2 = px.pie(sg, values="Tutar", names="Kategori", hole=0.5)
             fig2.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=250)
             st.plotly_chart(fig2, use_container_width=True)
-        st.caption("Harcama Trendi")
-        trend_data = sg.groupby("Tarih")["Tutar"].sum().reset_index().sort_values("Tarih")
-        fig3 = px.area(trend_data, x="Tarih", y="Tutar", markers=True)
-        fig3.update_layout(margin=dict(t=10, b=0, l=0, r=0), height=250, xaxis_title="", yaxis_title="")
-        fig3.update_traces(line_color="#FF4B4B", fillcolor="rgba(255, 75, 75, 0.2)")
-        st.plotly_chart(fig3, use_container_width=True)
     else: st.info("Veri yok.")
 
 # 3. LİSTE
 with tab_liste:
+    # EXCEL İNDİRME BUTONU BURADA
+    col_list_baslik, col_list_btn = st.columns([0.8, 0.2])
+    with col_list_baslik:
+        st.caption("Detaylı Kayıt Listesi")
+    with col_list_btn:
+        st.download_button("📥 Excel İndir", csv_indir(df), f"Yedek.csv", "text/csv", use_container_width=True)
+
     if not df_filt.empty:
         edt = df_filt.sort_values("Tarih", ascending=False).copy()
         edt["Tarih"] = edt["Tarih"].dt.date
