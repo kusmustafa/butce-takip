@@ -5,9 +5,10 @@ from datetime import datetime, date, timedelta
 from streamlit_gsheets import GSheetsConnection
 import time
 import re
+import yfinance as yf # FİNANS KÜTÜPHANESİ
 
 # --- 1. GÜVENLİK KONTROLÜ ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v30.1", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v31", page_icon="🐦", layout="wide")
 
 def giris_kontrol():
     if "giris_yapildi" not in st.session_state:
@@ -91,6 +92,27 @@ def etiketleri_analiz_et(df):
     if etiket_verisi: return pd.DataFrame(etiket_verisi).groupby("Etiket")["Tutar"].sum().reset_index().sort_values("Tutar", ascending=False)
     else: return pd.DataFrame()
 
+# --- YENİ: DÖVİZ VE ALTIN ÇEKME FONKSİYONU (Önbellekli) ---
+@st.cache_data(ttl=3600) # 1 saatte bir yenile (Siteyi yavaşlatmasın)
+def piyasa_verileri_getir():
+    try:
+        # Ticker Sembolleri (Yahoo Finance Kodları)
+        # TRY=X -> Dolar/TL
+        # EURTRY=X -> Euro/TL
+        # GC=F -> Ons Altın (Dolar bazlı)
+        tickers = yf.download("TRY=X EURTRY=X GC=F", period="1d", progress=False)['Close']
+        
+        dolar = tickers['TRY=X'].iloc[-1]
+        euro = tickers['EURTRY=X'].iloc[-1]
+        ons_altin = tickers['GC=F'].iloc[-1]
+        
+        # Gram Altın Hesabı: (Ons Fiyatı / 31.1035) * Dolar Kuru
+        gram_altin = (ons_altin / 31.1035) * dolar
+        
+        return dolar, euro, gram_altin
+    except:
+        return 0, 0, 0
+
 # --- BAŞLATMA ---
 df = verileri_cek()
 df_kat = kategorileri_cek()
@@ -106,6 +128,21 @@ if not df.empty:
 
 # --- YAN MENÜ ---
 with st.sidebar:
+    # --- YENİ: DÖVİZ BİLGİ KARTI ---
+    st.header("💰 Piyasa Durumu")
+    usd, eur, gram = piyasa_verileri_getir()
+    
+    if usd > 0:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Dolar", f"{usd:.2f}", help="USD/TRY")
+        c2.metric("Euro", f"{eur:.2f}", help="EUR/TRY")
+        c3.metric("Gr.Altın", f"{gram:.0f}", help="Hesaplanan Teorik Fiyat")
+        st.caption(f"🕒 Son Güncelleme: {datetime.now().strftime('%H:%M')}")
+    else:
+        st.warning("Veri çekilemedi.")
+    
+    st.divider()
+    
     st.header("⚙️ Ayarlar")
     if st.button("🔄 Verileri Yenile"): st.cache_data.clear(); st.rerun()
     st.download_button(label="📥 Yedeği İndir", data=csv_indir(df), file_name=f"Yedek_{datetime.now().strftime('%d%m%Y')}.csv", mime='text/csv')
@@ -157,12 +194,10 @@ with st.sidebar:
                     else: st.error("Veri yok.")
             else: st.info("Ay seçin.")
     else:
-        # ARAMA MODUNDA FİLTRELEME
         mask = df.astype(str).apply(lambda x: x.str.contains(arama_terimi, case=False)).any(axis=1)
         df_filt = df[mask]
         baslik = f"🔍 Sonuçlar: '{arama_terimi}'"
 
-    # Kategori Yönetimi (Her zaman görünür)
     st.divider()
     with st.expander("📂 Kategori"):
         t1, t2 = st.tabs(["Ekle", "Düzenle"])
@@ -194,8 +229,13 @@ with st.sidebar:
                         else: kategorileri_kaydet(df_kat[df_kat["Kategori"]!=sk]); st.success("Silindi"); st.rerun()
 
 # --- İÇERİK ---
-st.title("☁️ Kuşların Bütçe Makinesi v30.1")
+st.title("☁️ Kuşların Bütçe Makinesi v31")
 st.caption(f"Rapor: **{baslik}**")
+
+if arama_terimi:
+    st.subheader("🔍 Arama Modu Aktif")
+    st.markdown(f"**'{arama_terimi}'** aranıyor. Yeni kayıt girmek için aramayı temizleyin.")
+    if not df_filt.empty: st.caption(f"Toplam **{len(df_filt)}** kayıt bulundu.")
 
 if not df_filt.empty:
     gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
@@ -213,19 +253,8 @@ st.divider()
 
 cL, cR = st.columns([1, 1.5])
 with cL:
-    # --- BURAYI DÜZENLEDİK: UYARI YERİNE BİLGİ ---
     if arama_terimi:
-        st.subheader("🔍 Arama Modu Aktif")
-        st.markdown(f"""
-        **'{arama_terimi}'** kelimesi tüm kayıtlarda aranıyor.
-        
-        * Bu modda sadece **görüntüleme** yapabilirsiniz.
-        * Yeni kayıt girmek veya düzenlemek için lütfen soldaki **arama kutusunu temizleyin**.
-        """)
-        st.divider()
-        if not df_filt.empty:
-            count = len(df_filt)
-            st.caption(f"Toplam **{count}** adet kayıt bulundu.")
+        st.info("Arama modundayken veri girişi kapalıdır.")
     else:
         st.subheader("📝 Veri Girişi")
         y = st.selectbox("Yıl", range(datetime.now().year-2, datetime.now().year+2), index=2)
@@ -257,21 +286,15 @@ with cR:
         if not df_filt.empty and "Gider" in df_filt["Tür"].values:
             sg = df_filt[df_filt["Tür"]=="Gider"].copy()
             sg["Durum_Etiket"] = sg["Durum"].map({True: "Ödendi ✅", False: "Ödenmedi ❌"})
-            
             c1, c2 = st.columns(2)
             with c1: 
                 st.markdown("##### 1. Kategori")
                 st.plotly_chart(px.pie(sg, values="Tutar", names="Kategori", hole=0.4), use_container_width=True)
             with c2: 
-                st.markdown("##### 2. Etiket Detayı (#)")
-                etiket_df = etiketleri_analiz_et(sg)
-                if not etiket_df.empty:
-                    fig_tag = px.bar(etiket_df, x="Etiket", y="Tutar", color="Etiket", text="Tutar")
-                    fig_tag.update_traces(texttemplate='%{text:.2s}', textposition='outside')
-                    fig_tag.update_layout(showlegend=False, height=250, margin=dict(t=0,b=0,l=0,r=0))
-                    st.plotly_chart(fig_tag, use_container_width=True)
+                st.markdown("##### 2. Etiket (#)")
+                edf = etiketleri_analiz_et(sg)
+                if not edf.empty: st.plotly_chart(px.bar(edf, x="Etiket", y="Tutar", color="Etiket", text="Tutar").update_traces(texttemplate='%{text:.2s}', textposition='outside').update_layout(showlegend=False, height=250, margin=dict(t=0,b=0,l=0,r=0)), use_container_width=True)
                 else: st.info("Etiket yok.")
-
             st.divider()
             st.markdown("##### 3. Harcama Trendi")
             st.plotly_chart(px.area(sg.groupby("Tarih")["Tutar"].sum().reset_index().sort_values("Tarih"), x="Tarih", y="Tutar", markers=True).update_traces(line_color="#FF4B4B"), use_container_width=True)
@@ -282,7 +305,6 @@ with cR:
             edt["Tarih"] = edt["Tarih"].dt.date
             if "Son Ödeme Tarihi" in edt.columns: edt["Son Ödeme Tarihi"] = pd.to_datetime(edt["Son Ödeme Tarihi"], errors='coerce').dt.date
             
-            # ARAMA MODUNDA EDİTÖR KAPALI
             if arama_terimi:
                 st.dataframe(edt, hide_index=True, use_container_width=True)
                 st.caption("ℹ️ Arama modundayken düzenleme kapalıdır.")
