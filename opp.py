@@ -8,37 +8,40 @@ import re
 import yfinance as yf
 
 # --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v37", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v38", page_icon="🐦", layout="wide")
 
-# --- CUSTOM CSS (TASARIM SİHİRBAZLIĞI) ---
+# --- CUSTOM CSS (MOBİL ODAKLI TASARIM) ---
 st.markdown("""
 <style>
-    /* Üst boşluğu biraz artırdık ki başlık kesilmesin */
+    /* Üst boşluğu ayarla */
     .block-container {
         padding-top: 3rem;
-        padding-bottom: 1rem;
+        padding-bottom: 5rem; /* Mobilde alt kısım rahat olsun */
     }
+    
+    /* GEREKSİZLERİ GİZLE (APP HİSSİ İÇİN) */
+    #MainMenu {visibility: hidden;} /* Sağ üstteki üç çizgi menüsü */
+    footer {visibility: hidden;}    /* Alttaki 'Made with Streamlit' yazısı */
+    header {visibility: hidden;}    /* En tepedeki renkli şerit */
     
     /* KPI Kartları */
     div.kpi-card {
         background-color: white;
-        border-radius: 10px;
+        border-radius: 12px; /* Daha yuvarlak köşeler */
         padding: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.08); /* Hafif gölge */
         text-align: center;
         margin-bottom: 10px;
-        transition: transform 0.2s;
     }
-    div.kpi-card:hover { transform: scale(1.02); }
     div.kpi-title {
         color: #6c757d;
-        font-size: 0.9rem;
+        font-size: 0.8rem;
         font-weight: 600;
         text-transform: uppercase;
-        margin-bottom: 5px;
+        margin-bottom: 2px;
     }
     div.kpi-value {
-        font-size: 1.8rem;
+        font-size: 1.5rem; /* Mobilde taşmasın diye biraz küçülttük */
         font-weight: 700;
         margin-bottom: 0;
     }
@@ -49,10 +52,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- RENK PALETİ ---
-RENK_GELIR = "#28a745" # Yeşil
-RENK_GIDER = "#dc3545" # Kırmızı
-RENK_NET = "#007bff"   # Mavi
-RENK_ODENMEMIS = "#ffc107" # Sarı
+RENK_GELIR = "#28a745"
+RENK_GIDER = "#dc3545"
+RENK_NET = "#007bff"
+RENK_ODENMEMIS = "#ffc107"
 
 # --- GÜVENLİK ---
 def giris_kontrol():
@@ -168,16 +171,15 @@ if not df.empty:
     if "Tutar" in df.columns: df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
     else: df["Tutar"] = 0.0
 
-# --- DÜZELTİLMİŞ BAŞLIK VE YENİLEME BUTONU ---
-# CSS ile üst boşluğu ayarladık, şimdi kolonları ayarlıyoruz.
-col_header, col_refresh = st.columns([0.85, 0.15], gap="small")
+# --- ÜST BAŞLIK ---
+# Mobilde başlık ve yenile butonu yan yana güzel dursun
+col_header, col_refresh = st.columns([0.80, 0.20], gap="small")
 
 with col_header:
-    st.markdown("### 🐦 Kuşların Bütçe Makinesi")
+    st.markdown("### 🐦 Bütçe Makinesi")
 
 with col_refresh:
-    # Butonu biraz daha hizalı göstermek için
-    if st.button("🔄 Yenile", help="Verileri ve Kurları Güncelle", use_container_width=True):
+    if st.button("🔄", help="Yenile", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
@@ -185,7 +187,6 @@ st.markdown("---")
 
 # --- YAN MENÜ ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=50)
     st.caption("Yönetim Paneli")
     
     arama_terimi = st.text_input("🔍 Ara...", placeholder="Migros, Tatil...")
@@ -216,7 +217,6 @@ with st.sidebar:
 
     st.markdown("---")
     
-    # KOPYALAMA ARAÇLARI
     with st.expander("🛠️ Toplu İşlemler"):
         if not arama_terimi and secilen_ay_filtre != "Yılın Tamamı":
             if st.button("⏮️ Geçen Ayı Kopyala", use_container_width=True):
@@ -243,28 +243,22 @@ with st.sidebar:
     usd, eur, gram = piyasa_verileri_getir()
     if usd > 0:
         col_p1, col_p2, col_p3 = st.columns(3)
-        col_p1.markdown(f"<div style='font-size:12px; color:grey'>USD</div><div style='font-weight:bold'>{usd:.2f}</div>", unsafe_allow_html=True)
-        col_p2.markdown(f"<div style='font-size:12px; color:grey'>EUR</div><div style='font-weight:bold'>{eur:.2f}</div>", unsafe_allow_html=True)
-        col_p3.markdown(f"<div style='font-size:12px; color:grey'>ALTIN</div><div style='font-weight:bold'>{gram:.0f}</div>", unsafe_allow_html=True)
+        col_p1.markdown(f"<div style='font-size:11px; color:grey'>USD</div><div style='font-weight:bold; font-size:14px'>{usd:.2f}</div>", unsafe_allow_html=True)
+        col_p2.markdown(f"<div style='font-size:11px; color:grey'>EUR</div><div style='font-weight:bold; font-size:14px'>{eur:.2f}</div>", unsafe_allow_html=True)
+        col_p3.markdown(f"<div style='font-size:11px; color:grey'>ALTIN</div><div style='font-weight:bold; font-size:14px'>{gram:.0f}</div>", unsafe_allow_html=True)
     
     if st.button("🚪 Çıkış", use_container_width=True): st.session_state.giris_yapildi = False; st.rerun()
 
-# --- ANA EKRAN ---
+# --- ANA EKRAN (Kartlar) ---
 if not df_filt.empty:
     gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
     gider = df_filt[df_filt["Tür"] == "Gider"]["Tutar"].sum()
     net = gelir - gider
     bekleyen = df_filt[(df_filt["Tür"]=="Gider") & (df_filt["Durum"]==False)]["Tutar"].sum()
     
-    if net > 0:
-        net_ikon = "😃"
-        net_renk = RENK_GELIR
-    elif net < 0:
-        net_ikon = "☹️"
-        net_renk = RENK_GIDER
-    else:
-        net_ikon = "😐"
-        net_renk = RENK_NET
+    if net > 0: net_ikon = "😃"; net_renk = RENK_GELIR
+    elif net < 0: net_ikon = "☹️"; net_renk = RENK_GIDER
+    else: net_ikon = "😐"; net_renk = RENK_NET
 
     k1, k2, k3, k4 = st.columns(4)
     with k1: kpi_kart_ciz("GELİR", f"{gelir:,.0f} ₺", RENK_GELIR, "💰")
@@ -311,7 +305,7 @@ with tab_giris:
                         st.toast("✅ Kaydedildi!"); time.sleep(0.5); st.cache_data.clear(); st.rerun()
                     else: st.warning("Eksik bilgi!")
 
-# 2. GRAFİKLER (SADELEŞTİRİLMİŞ)
+# 2. GRAFİKLER
 with tab_analiz:
     if not df_filt.empty and "Gider" in df_filt["Tür"].values:
         sg = df_filt[df_filt["Tür"]=="Gider"].copy()
@@ -331,12 +325,9 @@ with tab_analiz:
 
 # 3. LİSTE
 with tab_liste:
-    # EXCEL İNDİRME BUTONU BURADA
     col_list_baslik, col_list_btn = st.columns([0.8, 0.2])
-    with col_list_baslik:
-        st.caption("Detaylı Kayıt Listesi")
-    with col_list_btn:
-        st.download_button("📥 Excel İndir", csv_indir(df), f"Yedek.csv", "text/csv", use_container_width=True)
+    with col_list_baslik: st.caption("Kayıtlar")
+    with col_list_btn: st.download_button("📥 Excel", csv_indir(df), f"Yedek.csv", "text/csv", use_container_width=True)
 
     if not df_filt.empty:
         edt = df_filt.sort_values("Tarih", ascending=False).copy()
@@ -371,7 +362,6 @@ with tab_yonetim:
             new_ad = st.text_input("Ad", value=row_k['Kategori'])
             new_tur = st.selectbox("Tür", ["Gider", "Gelir"], index=0 if row_k['Tur']=="Gider" else 1)
             new_gun = st.number_input("Gün", 0, 31, int(float(row_k['VarsayilanGun'])))
-            
             c_upd, c_del = st.columns(2)
             if c_upd.button("Güncelle"):
                 df_kat.loc[df_kat["Kategori"]==sel_k, ["Kategori","Tur","VarsayilanGun"]] = [new_ad, new_tur, new_gun]
