@@ -8,21 +8,12 @@ import re
 import yfinance as yf
 
 # --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v38.1", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Bütçe Makinesi v39", page_icon="🐦", layout="wide")
 
-# --- CUSTOM CSS (MOBİL ODAKLI - GÜVENLİ VERSİYON) ---
+# --- CUSTOM CSS (SADE VE GÜVENLİ) ---
+# Mobili bozan gizleme kodları kaldırıldı. Sadece kart tasarımı kaldı.
 st.markdown("""
 <style>
-    /* Üst boşluk ayarı - Mobilde içeriğin yukarı kaçmasını engeller */
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 5rem;
-    }
-    
-    /* SADECE ALT BİLGİ VE MENÜYÜ GİZLE (Header Kalsın - Çökmemesi İçin) */
-    #MainMenu {visibility: hidden;} 
-    footer {visibility: hidden;}
-    
     /* KPI Kartları */
     div.kpi-card {
         background-color: white;
@@ -56,27 +47,41 @@ RENK_GIDER = "#dc3545"
 RENK_NET = "#007bff"
 RENK_ODENMEMIS = "#ffc107"
 
-# --- GÜVENLİK (MOBİL İÇİN BASİTLEŞTİRİLDİ) ---
+# --- GÜVENLİK (MOBİL İÇİN GARANTİ YÖNTEM) ---
 def giris_kontrol():
-    if "giris_yapildi" not in st.session_state: st.session_state.giris_yapildi = False
-    if "genel" not in st.secrets: st.session_state.giris_yapildi = True; return
-    
+    # Session state kontrolü
+    if "giris_yapildi" not in st.session_state:
+        st.session_state.giris_yapildi = False
+
+    # Secrets dosyası yoksa (lokal test) direkt geçir
+    if "genel" not in st.secrets:
+        st.session_state.giris_yapildi = True
+        return
+
+    # Giriş yapılmadıysa KODU BURADA DURDUR ve sadece formu göster
     if not st.session_state.giris_yapildi:
-        # Mobilde sütun kullanmadan direkt ortalayalım
-        st.markdown("<br><br>", unsafe_allow_html=True) # Biraz boşluk
+        st.write("")
+        st.write("")
+        # Basit bir container, sütun yok (Mobilde kaymayı önler)
         with st.container(border=True):
-            st.markdown("<h3 style='text-align: center;'>🐦 Bütçe Makinesi</h3>", unsafe_allow_html=True)
-            st.info("🔒 Lütfen giriş yapınız.")
+            st.markdown("<h2 style='text-align: center;'>🐦 Bütçe Makinesi</h2>", unsafe_allow_html=True)
+            st.info("Devam etmek için şifrenizi giriniz.")
+            
             sifre = st.text_input("Şifre", type="password")
+            
             if st.button("Giriş Yap", type="primary", use_container_width=True):
                 if sifre == st.secrets["genel"]["sifre"]:
-                    st.session_state.giris_yapildi = True; st.rerun()
-                else: st.error("Hatalı!")
-        st.stop()
+                    st.session_state.giris_yapildi = True
+                    st.rerun()
+                else:
+                    st.error("Hatalı Şifre!")
+        
+        st.stop() # Kodun geri kalanını okuma!
 
+# Güvenliği en başta çalıştır
 giris_kontrol()
 
-# --- BAĞLANTI ---
+# --- BAĞLANTI (Sadece giriş başarılıysa buraya gelir) ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 KOLONLAR = ["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"]
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
