@@ -6,94 +6,114 @@ import time
 import re
 
 # --- 1. AYARLAR ---
-st.set_page_config(page_title="Bütçe v48", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Bütçe v49 (Premium)", page_icon="🐦", layout="wide")
 
-# --- 2. RESPONSIVE CSS (HEM MOBİL HEM PC İÇİN AKILLI TASARIM) ---
+# --- 2. PREMIUM TASARIM CSS ---
 st.markdown("""
 <style>
-    /* 1. GENEL AYARLAR (SOL MENÜYÜ GİZLE) */
-    [data-testid="stSidebar"] {display: none;}
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    /* FONT YÜKLEME (Inter) */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
 
-    /* 2. DİNAMİK BOŞLUK AYARI (Media Query) */
-    /* Bilgisayar (Geniş Ekran) için ayarlar */
-    .block-container {
-        padding-top: 2rem !important;
-        padding-bottom: 2rem !important;
-        padding-left: 5rem !important;
-        padding-right: 5rem !important;
+    /* GENEL STİL */
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
     }
 
-    /* Telefon (Dar Ekran) için ayarlar - Ekran 768px'den küçükse devreye girer */
+    /* GİZLEME */
+    [data-testid="stSidebar"], #MainMenu, footer, header {display: none;}
+
+    /* RESPONSIVE BOŞLUKLAR */
+    .block-container {
+        padding-top: 2rem !important; padding-bottom: 2rem !important;
+        padding-left: 5rem !important; padding-right: 5rem !important;
+    }
     @media (max-width: 768px) {
         .block-container {
-            padding-top: 4rem !important; /* Çentik için boşluk */
-            padding-bottom: 5rem !important;
-            padding-left: 1rem !important;
-            padding-right: 1rem !important;
+            padding-top: 4rem !important; padding-bottom: 5rem !important;
+            padding-left: 1rem !important; padding-right: 1rem !important;
         }
     }
 
-    /* 3. AKILLI KART IZGARASI (CSS GRID) */
-    /* Bu yapı, Python kolonları yerine HTML ızgarası kullanır */
+    /* --- ÖZEL BUTONLAR (SAĞ ÜST) --- */
+    /* Standart butonları eziyoruz */
+    .top-btn-container button {
+        border: none !important;
+        background-color: white !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1) !important;
+        color: #555 !important;
+        font-weight: 600 !important;
+        padding: 0.5rem 1rem !important;
+        border-radius: 8px !important;
+        font-size: 1rem !important; /* Daha büyük */
+        transition: all 0.2s ease-in-out !important;
+    }
+    .top-btn-container button:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15) !important;
+        transform: translateY(-2px) !important;
+        color: #333 !important;
+    }
+    /* Çıkış Butonuna Özel Stil (İstediğin İkon ve Vurgu) */
+    .logout-btn button {
+        color: #dc3545 !important; /* Kırmızımsı */
+    }
+    .logout-btn button:hover {
+        background-color: #fff5f5 !important;
+    }
+
+    /* --- FORM HİZALAMA (MÜKEMMEL UYUM) --- */
+    /* Ekle sekmesindeki form elemanlarını dikeyde ortala */
+    div[data-testid="stHorizontalBlock"] > div {
+        display: flex;
+        align-items: center; /* Dikey ortalama */
+    }
+    /* Radio butonların üzerindeki gereksiz boşluğu al */
+    .stRadio > div {
+        margin-top: 0 !important;
+    }
+    /* Number input'un etrafındaki boşluğu düzenle */
+    [data-testid="stNumberInput"] {
+        margin-top: 0 !important;
+    }
+
+    /* --- KART TASARIMI (PREMIUM) --- */
     .kpi-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr); /* Bilgisayarda 4 yan yana */
-        gap: 10px; /* Kartlar arası boşluk */
-        margin-bottom: 20px;
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px;
     }
-
-    /* Telefondaysa 2 yan yana olsun */
-    @media (max-width: 768px) {
-        .kpi-grid {
-            grid-template-columns: repeat(2, 1fr); 
-        }
-    }
-
-    /* KART STİLİ */
+    @media (max-width: 768px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
     .kpi-card {
-        background-color: white;
-        border-radius: 12px;
-        padding: 15px;
-        text-align: center;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        border: 1px solid #f0f0f0;
+        background: white; border-radius: 16px; padding: 20px; text-align: center;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);
+        transition: transform 0.2s, box-shadow 0.2s;
     }
-    .kpi-title {
-        color: #888;
-        font-size: 0.75rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        margin-bottom: 5px;
-    }
-    .kpi-value {
-        font-size: 1.3rem; /* Mobilde taşmasın diye optimize edildi */
-        font-weight: 800;
-        margin: 0;
-    }
+    .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 6px 15px rgba(0,0,0,0.12); }
+    .kpi-title { color: #999; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px; }
+    .kpi-value { font-size: 1.5rem; font-weight: 800; margin: 0; }
 
-    /* Piyasa Bilgisi Stili */
+    /* --- PİYASA KUTUSU --- */
     .market-box {
-        display: inline-flex;
-        gap: 15px;
-        background: #f8f9fa;
-        padding: 8px 15px;
-        border-radius: 20px;
-        border: 1px solid #eee;
-        font-size: 0.9rem;
-        font-weight: 600;
-        color: #444;
+        display: inline-flex; gap: 15px; background: white; padding: 10px 20px;
+        border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        font-size: 0.95rem; font-weight: 700; color: #444; border: 1px solid #eee;
     }
-    @media (max-width: 768px) {
-        .market-box {
-            font-size: 0.8rem;
-            gap: 8px;
-            padding: 5px 10px;
-            width: 100%;
-            justify-content: center;
-        }
+    @media (max-width: 768px) { .market-box { width: 100%; justify-content: center; padding: 8px; gap: 10px; font-size: 0.85rem; } }
+
+    /* --- SEKMELER VE GENEL --- */
+    .stTabs [data-baseweb="tab"] {
+        font-weight: 600; font-size: 1rem; color: #666;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #007bff !important;
+    }
+    /* Giriş alanlarını güzelleştir */
+    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
+        border-radius: 10px !important; border: 1px solid #eee !important; padding: 0.5rem 1rem !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
+    }
+    /* Ana Buton (KAYDET) */
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #ff4b4b, #ff6b6b) !important;
+        border: none !important; box-shadow: 0 4px 10px rgba(255, 75, 75, 0.3) !important;
+        font-weight: 700 !important; padding: 0.75rem !important; font-size: 1.1rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -194,7 +214,7 @@ if "genel" not in st.secrets: st.session_state.giris_yapildi = True
 if not st.session_state.giris_yapildi:
     st.markdown("<br><br>", unsafe_allow_html=True)
     with st.container(border=True):
-        st.markdown("<h2 style='text-align: center; color: #555;'>🐦 Giriş</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: #333; font-weight: 800;'>🐦 Giriş</h2>", unsafe_allow_html=True)
         with st.form("giris_formu"):
             sifre = st.text_input("Şifre", type="password")
             if st.form_submit_button("Giriş Yap", type="primary", use_container_width=True):
@@ -219,14 +239,12 @@ else:
         if "Tutar" in df.columns: df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
         else: df["Tutar"] = 0.0
 
-    # 1. ÜST BAR (Piyasa + Yenile + Çıkış)
-    # Mobilde alt alta, PC'de yan yana olacak şekilde
-    col_top_left, col_top_right = st.columns([0.7, 0.3])
+    # 1. ÜST BAR (Piyasa + Özel Butonlar)
+    col_top_left, col_top_right = st.columns([0.65, 0.35])
     
     usd, eur, gram = piyasa_verileri_getir()
     
     with col_top_left:
-        # PİYASA KUTUSU
         if usd > 0:
             st.markdown(f"""
             <div class="market-box">
@@ -238,12 +256,17 @@ else:
         else: st.caption("Yükleniyor...")
 
     with col_top_right:
-        # BUTONLAR
+        # Butonları özel CSS sınıfları olan container'lara koyuyoruz
         b1, b2 = st.columns(2)
         with b1: 
-            if st.button("🔄", help="Yenile"): st.cache_data.clear(); st.rerun()
+            st.markdown('<div class="top-btn-container">', unsafe_allow_html=True)
+            if st.button("🔄 Yenile", use_container_width=True): st.cache_data.clear(); st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
         with b2: 
-            if st.button("🚪", help="Çıkış"): st.session_state.giris_yapildi = False; st.rerun()
+            # İstenen ikona (⎋) sahip, özel stilli çıkış butonu
+            st.markdown('<div class="top-btn-container logout-btn">', unsafe_allow_html=True)
+            if st.button("⎋ Çıkış", use_container_width=True): st.session_state.giris_yapildi = False; st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -302,7 +325,7 @@ else:
 
     st.write("")
 
-    # 3. KARTLAR (CSS GRID İLE OTOMATİK DÜZEN)
+    # 3. KARTLAR (PREMIUM GRID)
     if not df_filt.empty:
         gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
         gider = df_filt[df_filt["Tür"] == "Gider"]["Tutar"].sum()
@@ -313,7 +336,6 @@ else:
         if net > 0: ik = "😃"; cr = RENK_GELIR
         elif net < 0: ik = "☹️"; cr = RENK_GIDER
         
-        # HTML GRID YAPISI (BİLGİSAYARDA 4, TELEFONDA 2 KOLON)
         st.markdown(f"""
         <div class="kpi-grid">
             <div class="kpi-card" style="border-top: 4px solid {RENK_GELIR};">
@@ -345,17 +367,20 @@ else:
         if arama_modu: st.warning("Aramayı kapatın")
         else:
             with st.container(border=True):
-                c_k, c_t = st.columns([1.5, 1])
-                with c_k:
+                # HİZALANMIŞ FORM ALANI (CSS ile destekleniyor)
+                c_tur, c_kat, c_tut = st.columns([1, 1.5, 1])
+                with c_tur:
                     ts = st.radio("Tür", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
+                with c_kat:
                     kl = df_kat[df_kat["Tur"]==ts]["Kategori"].tolist() if not df_kat.empty else []
-                    ks = st.selectbox("Kat.", kl, index=None, label_visibility="collapsed", placeholder="Seç...")
-                with c_t:
-                    st.write("")
+                    ks = st.selectbox("Kat.", kl, index=None, label_visibility="collapsed", placeholder="Kategori Seç...")
+                with c_tut:
                     tug = st.number_input("Tutar", step=50.0, label_visibility="collapsed", placeholder="0.00 ₺")
-                ac = st.text_input("Not", placeholder="#etiket")
+                
+                ac = st.text_input("Not", placeholder="#etiket (Opsiyonel)")
+                
                 if st.button("KAYDET", type="primary", use_container_width=True):
-                    if secilen_yil == "Tüm" or secilen_ay == "Tüm": st.error("Yıl/Ay Seç")
+                    if secilen_yil == "Tüm" or secilen_ay == "Tüm": st.error("Lütfen bir Yıl ve Ay seçin.")
                     elif ks and tug > 0:
                         vg = 0
                         if not df_kat.empty:
@@ -363,8 +388,8 @@ else:
                             if not r.empty: vg = int(float(r.iloc[0]["VarsayilanGun"]))
                         kt = tarih_olustur(secilen_yil, secilen_ay, vg)
                         yeni = pd.DataFrame([{"Tarih": pd.to_datetime(kt), "Kategori": ks, "Tür": ts, "Tutar": float(tug), "Son Ödeme Tarihi": son_odeme_hesapla(kt, vg), "Açıklama": ac, "Durum": False}])
-                        verileri_kaydet(conn, pd.concat([df, yeni], ignore_index=True)); st.success("Ok"); time.sleep(0.5); st.rerun()
-                    else: st.warning("Eksik")
+                        verileri_kaydet(conn, pd.concat([df, yeni], ignore_index=True)); st.success("Kaydedildi!"); time.sleep(0.5); st.rerun()
+                    else: st.warning("Tutar ve Kategori zorunludur.")
 
     with t2:
         if not df_filt.empty and "Gider" in df_filt["Tür"].values:
@@ -375,7 +400,7 @@ else:
             with c_g2: st.caption("Kategori"); st.plotly_chart(px.pie(sg, values="Tutar", names="Kategori", hole=0.5).update_layout(margin=dict(t=0,b=0,l=0,r=0), height=180, showlegend=False), use_container_width=True)
             edf = etiketleri_analiz_et(sg)
             if not edf.empty: st.caption("Etiketler"); st.plotly_chart(px.bar(edf, x="Etiket", y="Tutar").update_layout(height=200, showlegend=False), use_container_width=True)
-        else: st.info("Veri yok")
+        else: st.info("Gider verisi yok.")
 
     with t3:
         if not df_filt.empty:
@@ -385,10 +410,10 @@ else:
             if arama_modu: st.dataframe(edt, hide_index=True, use_container_width=True)
             else:
                 duz = st.data_editor(edt, column_config={"Durum": st.column_config.CheckboxColumn(default=False), "Tutar": st.column_config.NumberColumn(format="%.0f"), "Kategori": st.column_config.SelectboxColumn(options=df_kat["Kategori"].unique().tolist()), "Tür": st.column_config.SelectboxColumn(options=["Gider", "Gelir"])}, hide_index=True, use_container_width=True, num_rows="dynamic")
-                if st.button("💾 Kaydet", use_container_width=True):
+                if st.button("💾 Tabloyu Kaydet", use_container_width=True):
                     dfr = df.drop(df_filt.index); duz["Tarih"] = pd.to_datetime(duz["Tarih"])
-                    verileri_kaydet(conn, pd.concat([dfr, duz], ignore_index=True)); st.success("Ok"); st.rerun()
-        else: st.write("Boş")
+                    verileri_kaydet(conn, pd.concat([dfr, duz], ignore_index=True)); st.success("Güncellendi."); st.rerun()
+        else: st.write("Kayıt yok.")
 
     with t4:
         c1, c2 = st.columns(2)
@@ -400,10 +425,10 @@ else:
                 if st.form_submit_button("Ekle"):
                     gk = conn.read(worksheet="Kategoriler", ttl=0) if not df_kat.empty else df_kat
                     if ka and ka not in gk["Kategori"].values:
-                        kategorileri_kaydet(conn, pd.concat([gk, pd.DataFrame([{"Kategori": ka, "Tur": kt, "VarsayilanGun": kg}])], ignore_index=True)); st.success("Ok"); st.rerun()
+                        kategorileri_kaydet(conn, pd.concat([gk, pd.DataFrame([{"Kategori": ka, "Tur": kt, "VarsayilanGun": kg}])], ignore_index=True)); st.success("Eklendi."); st.rerun()
         with c2:
             if not df_kat.empty:
                 sk = st.selectbox("Sil", df_kat["Kategori"].tolist(), label_visibility="collapsed")
                 if st.button("Sil", type="primary", use_container_width=True):
-                    if sk in df["Kategori"].values: st.error("Dolu!")
-                    else: kategorileri_kaydet(conn, df_kat[df_kat["Kategori"]!=sk]); st.success("Ok"); st.rerun()
+                    if sk in df["Kategori"].values: st.error("Kullanımda!")
+                    else: kategorileri_kaydet(conn, df_kat[df_kat["Kategori"]!=sk]); st.success("Silindi."); st.rerun()
