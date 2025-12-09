@@ -8,28 +8,27 @@ import re
 import yfinance as yf
 
 # --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Kuşların Bütçe Makinesi v38", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Kuşların Bütçe Makinesi v38.1", page_icon="🐦", layout="wide")
 
-# --- CUSTOM CSS (MOBİL ODAKLI TASARIM) ---
+# --- CUSTOM CSS (MOBİL ODAKLI - GÜVENLİ VERSİYON) ---
 st.markdown("""
 <style>
-    /* Üst boşluğu ayarla */
+    /* Üst boşluk ayarı - Mobilde içeriğin yukarı kaçmasını engeller */
     .block-container {
-        padding-top: 3rem;
-        padding-bottom: 5rem; /* Mobilde alt kısım rahat olsun */
+        padding-top: 2rem;
+        padding-bottom: 5rem;
     }
     
-    /* GEREKSİZLERİ GİZLE (APP HİSSİ İÇİN) */
-    #MainMenu {visibility: hidden;} /* Sağ üstteki üç çizgi menüsü */
-    footer {visibility: hidden;}    /* Alttaki 'Made with Streamlit' yazısı */
-    header {visibility: hidden;}    /* En tepedeki renkli şerit */
+    /* SADECE ALT BİLGİ VE MENÜYÜ GİZLE (Header Kalsın - Çökmemesi İçin) */
+    #MainMenu {visibility: hidden;} 
+    footer {visibility: hidden;}
     
     /* KPI Kartları */
     div.kpi-card {
         background-color: white;
-        border-radius: 12px; /* Daha yuvarlak köşeler */
+        border-radius: 12px;
         padding: 15px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.08); /* Hafif gölge */
+        box-shadow: 0 2px 5px rgba(0,0,0,0.08);
         text-align: center;
         margin-bottom: 10px;
     }
@@ -41,7 +40,7 @@ st.markdown("""
         margin-bottom: 2px;
     }
     div.kpi-value {
-        font-size: 1.5rem; /* Mobilde taşmasın diye biraz küçülttük */
+        font-size: 1.5rem;
         font-weight: 700;
         margin-bottom: 0;
     }
@@ -57,15 +56,18 @@ RENK_GIDER = "#dc3545"
 RENK_NET = "#007bff"
 RENK_ODENMEMIS = "#ffc107"
 
-# --- GÜVENLİK ---
+# --- GÜVENLİK (MOBİL İÇİN BASİTLEŞTİRİLDİ) ---
 def giris_kontrol():
     if "giris_yapildi" not in st.session_state: st.session_state.giris_yapildi = False
     if "genel" not in st.secrets: st.session_state.giris_yapildi = True; return
+    
     if not st.session_state.giris_yapildi:
-        c1, c2, c3 = st.columns([1,1,1])
-        with c2:
-            st.info("🔒 Giriş")
-            sifre = st.text_input("Şifre", type="password", label_visibility="collapsed")
+        # Mobilde sütun kullanmadan direkt ortalayalım
+        st.markdown("<br><br>", unsafe_allow_html=True) # Biraz boşluk
+        with st.container(border=True):
+            st.markdown("<h3 style='text-align: center;'>🐦 Bütçe Makinesi</h3>", unsafe_allow_html=True)
+            st.info("🔒 Lütfen giriş yapınız.")
+            sifre = st.text_input("Şifre", type="password")
             if st.button("Giriş Yap", type="primary", use_container_width=True):
                 if sifre == st.secrets["genel"]["sifre"]:
                     st.session_state.giris_yapildi = True; st.rerun()
@@ -172,7 +174,6 @@ if not df.empty:
     else: df["Tutar"] = 0.0
 
 # --- ÜST BAŞLIK ---
-# Mobilde başlık ve yenile butonu yan yana güzel dursun
 col_header, col_refresh = st.columns([0.80, 0.20], gap="small")
 
 with col_header:
@@ -362,6 +363,7 @@ with tab_yonetim:
             new_ad = st.text_input("Ad", value=row_k['Kategori'])
             new_tur = st.selectbox("Tür", ["Gider", "Gelir"], index=0 if row_k['Tur']=="Gider" else 1)
             new_gun = st.number_input("Gün", 0, 31, int(float(row_k['VarsayilanGun'])))
+            
             c_upd, c_del = st.columns(2)
             if c_upd.button("Güncelle"):
                 df_kat.loc[df_kat["Kategori"]==sel_k, ["Kategori","Tur","VarsayilanGun"]] = [new_ad, new_tur, new_gun]
