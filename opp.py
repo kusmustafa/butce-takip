@@ -5,36 +5,47 @@ from datetime import datetime, date, timedelta
 import time
 import re
 
-# --- 1. SAYFA AYARLARI (EN HAFİF HALİYLE) ---
-st.set_page_config(page_title="Bütçe Makinesi v43", page_icon="🐦", layout="wide")
+# --- 1. AYARLAR (EN BAŞTA) ---
+st.set_page_config(page_title="Bütçe v44", page_icon="🐦", layout="wide")
 
-# --- CUSTOM CSS ---
+# --- 2. TASARIM (KESİLMELERİ ÖNLEYEN DÜZELTME) ---
 st.markdown("""
 <style>
-    .block-container { padding-top: 1rem; padding-bottom: 3rem; }
+    /* Üst boşluğu ÇOK ARTIRDIM (Mobilde kesilmeyi önler) */
+    .block-container {
+        padding-top: 4rem !important; /* Başlıklar artık yukarı yapışmaz */
+        padding-bottom: 5rem !important;
+    }
+    
+    /* Gereksizleri gizle */
     #MainMenu {visibility: hidden;} 
     footer {visibility: hidden;}
+    header {visibility: hidden;} /* Renkli şeridi gizle */
     
+    /* Kart Tasarımı */
     div.kpi-card {
         background-color: white;
-        border-radius: 12px;
-        padding: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        border-radius: 10px;
+        padding: 12px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         text-align: center;
-        margin-bottom: 5px;
+        margin-bottom: 8px;
+        border: 1px solid #eee;
     }
     div.kpi-title {
-        color: #6c757d;
+        color: #888;
         font-size: 0.75rem; 
         font-weight: 600;
         text-transform: uppercase;
-        margin-bottom: 0;
+        margin-bottom: 2px;
     }
     div.kpi-value {
-        font-size: 1.2rem;
+        font-size: 1.3rem;
         font-weight: 700;
+        color: #333;
         margin-bottom: 0;
     }
+    
     [data-testid="stSidebar"] { background-color: #f8f9fa; }
 </style>
 """, unsafe_allow_html=True)
@@ -47,57 +58,14 @@ RENK_ODENMEMIS = "#ffc107"
 KOLONLAR = ["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"]
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 
-# --- YARDIMCI FONKSİYONLAR ---
-def kpi_kart_ciz(baslik, deger, renk, ikon):
-    st.markdown(f"""
-    <div class="kpi-card" style="border-left: 4px solid {renk};">
-        <div class="kpi-title">{baslik}</div>
-        <div class="kpi-value" style="color: {renk};">{ikon} {deger}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-def csv_indir(df): return df.to_csv(index=False).encode('utf-8')
-
-def tarih_olustur(yil, ay_ismi, gun):
-    try: ay_index = AYLAR.index(ay_ismi) + 1
-    except: ay_index = datetime.now().month
-    try: h_gun = int(float(gun)); 
-    except: h_gun = 1
-    if h_gun <= 0: h_gun = 1
-    try: return date(yil, ay_index, h_gun)
-    except ValueError: return date(yil, ay_index, 28)
-
-def son_odeme_hesapla(islem_tarihi, varsayilan_gun):
-    if not varsayilan_gun or varsayilan_gun == 0: return islem_tarihi
-    try:
-        v_gun = int(float(varsayilan_gun))
-        return tarih_olustur(islem_tarihi.year, AYLAR[islem_tarihi.month-1], v_gun)
-    except: return islem_tarihi
-
-def etiketleri_analiz_et(df):
-    etiket_verisi = []
-    for _, row in df.iterrows():
-        aciklama = str(row["Açıklama"]).lower()
-        bulunanlar = re.findall(r"#(\w+)", aciklama)
-        if bulunanlar:
-            bolunmus_tutar = row["Tutar"] / len(bulunanlar)
-            for etiket in bulunanlar: etiket_verisi.append({"Etiket": etiket, "Tutar": bolunmus_tutar})
-    if etiket_verisi: return pd.DataFrame(etiket_verisi).groupby("Etiket")["Tutar"].sum().reset_index().sort_values("Tutar", ascending=False)
-    else: return pd.DataFrame()
-
-# --- AĞIR YÜKLER (FONKSİYON İÇİNE GİZLENDİ) ---
-# Bu fonksiyonlar sadece çağrıldığında kütüphaneyi yükler.
-# Böylece uygulama açılışta bekleme yapmaz.
-
+# --- BAĞLANTI FONKSİYONLARI (LAZY LOAD) ---
 def get_connection():
-    # Kütüphaneyi BURADA yüklüyoruz
     from streamlit_gsheets import GSheetsConnection
     return st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=3600) 
 def piyasa_verileri_getir():
     try:
-        # Kütüphaneyi BURADA yüklüyoruz
         import yfinance as yf
         tickers = yf.download("TRY=X EURTRY=X GC=F", period="1d", progress=False)['Close']
         dolar = tickers['TRY=X'].iloc[-1]
@@ -107,7 +75,7 @@ def piyasa_verileri_getir():
         return dolar, euro, gram_altin
     except: return 0, 0, 0
 
-# --- VERİTABANI SORGULARI ---
+# --- VERİ İŞLEMLERİ ---
 def verileri_cek(conn):
     try:
         df = conn.read(worksheet="Veriler", ttl=0)
@@ -138,43 +106,71 @@ def verileri_kaydet(conn, df):
 
 def kategorileri_kaydet(conn, df): conn.update(worksheet="Kategoriler", data=df)
 
+def csv_indir(df): return df.to_csv(index=False).encode('utf-8')
+
+# --- YARDIMCILAR ---
+def kpi_kart_ciz(baslik, deger, renk, ikon):
+    st.markdown(f"""
+    <div class="kpi-card" style="border-left: 4px solid {renk};">
+        <div class="kpi-title">{baslik}</div>
+        <div class="kpi-value" style="color: {renk} !important;">{ikon} {deger}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def tarih_olustur(yil, ay_ismi, gun):
+    try: ay_index = AYLAR.index(ay_ismi) + 1
+    except: ay_index = datetime.now().month
+    try: h_gun = int(float(gun)); 
+    except: h_gun = 1
+    if h_gun <= 0: h_gun = 1
+    try: return date(yil, ay_index, h_gun)
+    except ValueError: return date(yil, ay_index, 28)
+
+def son_odeme_hesapla(islem_tarihi, varsayilan_gun):
+    if not varsayilan_gun or varsayilan_gun == 0: return islem_tarihi
+    try:
+        v_gun = int(float(varsayilan_gun))
+        return tarih_olustur(islem_tarihi.year, AYLAR[islem_tarihi.month-1], v_gun)
+    except: return islem_tarihi
 
 # ==========================================
-# --- ANA AKIŞ ---
+# --- UYGULAMA BAŞLANGICI ---
 # ==========================================
 
+# Oturum Durumu
 if "giris_yapildi" not in st.session_state:
     st.session_state.giris_yapildi = False
 
-# Geliştirici modu (Secrets yoksa)
+# Geliştirici modu (Lokal)
 if "genel" not in st.secrets:
     st.session_state.giris_yapildi = True
 
-# --- 1. EKRAN: GİRİŞ (İNTERNETSİZ ÇALIŞIR) ---
+# --- 1. EKRAN: GİRİŞ ---
 if not st.session_state.giris_yapildi:
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    # Mobilde üst boşluğu garantiye al
+    st.write("") 
+    st.write("") 
+    
     with st.container(border=True):
-        st.markdown("<h3 style='text-align: center;'>🐦 Giriş</h3>", unsafe_allow_html=True)
-        
-        with st.form("login_form"):
+        st.subheader("🐦 Giriş")
+        with st.form("giris_formu"):
             sifre = st.text_input("Şifre", type="password")
-            submit = st.form_submit_button("Giriş Yap", type="primary", use_container_width=True)
+            btn = st.form_submit_button("Giriş Yap", type="primary", use_container_width=True)
             
-            if submit:
+            if btn:
                 if sifre == st.secrets["genel"]["sifre"]:
                     st.session_state.giris_yapildi = True
                     st.rerun()
                 else:
-                    st.error("Hatalı Şifre")
+                    st.error("Hatalı!")
 
-# --- 2. EKRAN: UYGULAMA (BURADA BAĞLANIR) ---
+# --- 2. EKRAN: ANA UYGULAMA ---
 else:
-    # Kullanıcı içeri girdi, şimdi interneti kullanalım
     conn = get_connection()
     df = verileri_cek(conn)
     df_kat = kategorileri_cek(conn)
 
-    # Veri tiplerini düzelt
+    # Veri Tipi Düzeltme
     if not df.empty:
         df["Tarih"] = pd.to_datetime(df["Tarih"], errors='coerce')
         df = df.dropna(subset=["Tarih"])
@@ -184,189 +180,159 @@ else:
         if "Tutar" in df.columns: df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
         else: df["Tutar"] = 0.0
 
-    # Üst Bar
-    col_header, col_refresh = st.columns([0.80, 0.20], gap="small")
-    with col_header: st.markdown("### 🐦 Bütçe Makinesi")
-    with col_refresh:
-        if st.button("🔄", help="Yenile", use_container_width=True):
-            st.cache_data.clear(); st.rerun()
+    # Üst Kısım
+    c_head, c_ref = st.columns([0.85, 0.15])
+    with c_head: st.subheader("🐦 Bütçe v44")
+    with c_ref: 
+        if st.button("🔄"): st.cache_data.clear(); st.rerun()
 
-    # Ana Filtreler
-    c_arama_btn, c_yil_ana, c_ay_ana = st.columns([0.15, 0.35, 0.50], gap="small")
-    with c_arama_btn: arama_aktif = st.checkbox("🔍", help="Arama")
-
-    if arama_aktif:
-        with c_yil_ana: st.write("") 
-        with c_ay_ana: arama_terimi = st.text_input("Ara...", label_visibility="collapsed")
-        if arama_terimi:
-            mask = df.astype(str).apply(lambda x: x.str.contains(arama_terimi, case=False)).any(axis=1)
-            df_filt = df[mask]; baslik = f"🔍 '{arama_terimi}'"; ay_no = 0; secilen_ay_filtre = "Arama"
-        else: df_filt = df; baslik = "Hepsi"; ay_no = 0; secilen_ay_filtre = "Yılın Tamamı"
+    # Filtreler (Üstte)
+    c_ara, c_yil, c_ay = st.columns([0.15, 0.35, 0.50], gap="small")
+    with c_ara: arama_modu = st.checkbox("🔍")
+    
+    if arama_modu:
+        with c_yil: st.write("")
+        with c_ay: kelime = st.text_input("Ara", label_visibility="collapsed")
+        
+        if kelime:
+            df_filt = df[df.astype(str).apply(lambda x: x.str.contains(kelime, case=False)).any(axis=1)]
+            secilen_yil = "Arama"; secilen_ay = "Arama"
+        else: df_filt = df; secilen_yil = "Arama"; secilen_ay = "Arama"
     else:
-        arama_terimi = None
-        if not df.empty and "Tarih" in df.columns:
-            yil_list = sorted(df["Tarih"].dt.year.unique(), reverse=True)
-            if datetime.now().year not in yil_list: yil_list.insert(0, datetime.now().year)
-            with c_yil_ana: secilen_yil_filtre = st.selectbox("Yıl", ["Tüm Zamanlar"] + list(yil_list), label_visibility="collapsed")
-            with c_ay_ana:
-                now = datetime.now(); varsayilan_ay = now.month if secilen_yil_filtre == now.year else 0
-                secilen_ay_filtre = st.selectbox("Ay", ["Yılın Tamamı"] + AYLAR, index=varsayilan_ay, label_visibility="collapsed")
-            if secilen_yil_filtre == "Tüm Zamanlar": df_filt = df; baslik = "Tüm Zamanlar"; ay_no = 0
-            else:
-                df_filt = df[df["Tarih"].dt.year == secilen_yil_filtre]
-                if secilen_ay_filtre != "Yılın Tamamı":
-                    ay_no = AYLAR.index(secilen_ay_filtre) + 1
-                    df_filt = df_filt[df_filt["Tarih"].dt.month == ay_no]; baslik = f"{secilen_ay_filtre} {secilen_yil_filtre}"
-                else: baslik = f"{secilen_yil_filtre} Tamamı"; ay_no = 0
-        else: df_filt = df; baslik = "Veri Yok"; ay_no = 0
+        kelime = None
+        yil_list = sorted(df["Tarih"].dt.year.unique(), reverse=True) if not df.empty else []
+        if datetime.now().year not in yil_list: yil_list.insert(0, datetime.now().year)
+        
+        with c_yil: secilen_yil = st.selectbox("Yıl", ["Tüm"] + list(yil_list), label_visibility="collapsed")
+        with c_ay: 
+            idx = datetime.now().month if secilen_yil == datetime.now().year else 0
+            secilen_ay = st.selectbox("Ay", ["Tüm"] + AYLAR, index=idx, label_visibility="collapsed")
+        
+        if secilen_yil == "Tüm": df_filt = df
+        else:
+            df_filt = df[df["Tarih"].dt.year == secilen_yil]
+            if secilen_ay != "Tüm":
+                ay_no = AYLAR.index(secilen_ay) + 1
+                df_filt = df_filt[df_filt["Tarih"].dt.month == ay_no]
 
-    # Araçlar
-    if not arama_aktif and secilen_ay_filtre != "Yılın Tamamı" and secilen_yil_filtre != "Tüm Zamanlar":
-        with st.expander("🛠️ İşlemler"):
-            c_kopya, c_indir = st.columns(2)
-            with c_indir: st.download_button("📥 Excel", csv_indir(df), f"Yedek.csv", "text/csv", use_container_width=True)
-            with c_kopya:
-                if st.button("⏮️ Ayı Kopyala", use_container_width=True):
-                    hy = secilen_yil_filtre; ha = ay_no
+    # Ek Araçlar
+    if not arama_modu and secilen_ay != "Tüm" and secilen_yil != "Tüm":
+        with st.expander("🛠️ Kopyala / İndir"):
+            c1, c2 = st.columns(2)
+            with c1: st.download_button("📥 Excel", csv_indir(df), "yedek.csv", "text/csv", use_container_width=True)
+            with c2:
+                if st.button("⏮️ Kopyala", use_container_width=True):
+                    hy = secilen_yil; ha = AYLAR.index(secilen_ay) + 1
                     if ha == 1: ka = 12; ky = hy - 1
                     else: ka = ha - 1; ky = hy
                     kdf = df[(df["Tarih"].dt.year == ky) & (df["Tarih"].dt.month == ka) & (df["Tür"] == "Gider")]
                     if not kdf.empty:
                         kopya = []
-                        for _, row in kdf.iterrows():
-                            kb = df_kat[df_kat["Kategori"] == row["Kategori"]]
+                        for _, r in kdf.iterrows():
+                            kb = df_kat[df_kat["Kategori"] == r["Kategori"]]
                             if not kb.empty and int(float(kb.iloc[0]["VarsayilanGun"])) > 0:
                                 vg = int(float(kb.iloc[0]["VarsayilanGun"]))
-                                yt = tarih_olustur(hy, secilen_ay_filtre, vg)
-                                yso = son_odeme_hesapla(yt, vg)
-                                kopya.append({"Tarih": pd.to_datetime(yt), "Kategori": row["Kategori"], "Tür": "Gider", "Tutar": row["Tutar"], "Son Ödeme Tarihi": yso, "Açıklama": f"{row['Açıklama']} (Kopya)", "Durum": False})
+                                yt = tarih_olustur(hy, secilen_ay, vg)
+                                kopya.append({"Tarih": pd.to_datetime(yt), "Kategori": r["Kategori"], "Tür": "Gider", "Tutar": r["Tutar"], "Son Ödeme Tarihi": son_odeme_hesapla(yt, vg), "Açıklama": f"{r['Açıklama']} (Kopya)", "Durum": False})
                         if kopya: verileri_kaydet(conn, pd.concat([df, pd.DataFrame(kopya)], ignore_index=True)); st.success("Tamam"); time.sleep(1); st.rerun()
-                        else: st.warning("Sabit yok.")
-                    else: st.error("Veri yok.")
+                        else: st.warning("Sabit yok")
+                    else: st.error("Veri yok")
 
-    st.write("") 
+    st.write("")
 
-    # Kartlar
+    # KPI Kartları
     if not df_filt.empty:
         gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
         gider = df_filt[df_filt["Tür"] == "Gider"]["Tutar"].sum()
         net = gelir - gider
         bekleyen = df_filt[(df_filt["Tür"]=="Gider") & (df_filt["Durum"]==False)]["Tutar"].sum()
         
-        if net > 0: net_ikon = "😃"; net_renk = RENK_GELIR
-        elif net < 0: net_ikon = "☹️"; net_renk = RENK_GIDER
-        else: net_ikon = "😐"; net_renk = RENK_NET
+        ik = "😐"; cr = RENK_NET
+        if net > 0: ik = "😃"; cr = RENK_GELIR
+        elif net < 0: ik = "☹️"; cr = RENK_GIDER
         
-        r1_c1, r1_c2 = st.columns(2)
-        with r1_c1: kpi_kart_ciz("GELİR", f"{gelir:,.0f} ₺", RENK_GELIR, "💰")
-        with r1_c2: kpi_kart_ciz("GİDER", f"{gider:,.0f} ₺", RENK_GIDER, "💸")
-        r2_c1, r2_c2 = st.columns(2)
-        with r2_c1: kpi_kart_ciz("NET", f"{net:,.0f} ₺", net_renk, net_ikon)
-        with r2_c2: kpi_kart_ciz("ÖDENMEMİŞ", f"{bekleyen:,.0f} ₺", RENK_ODENMEMIS, "⏳")
-    else: st.info("Kayıt yok.")
+        r1, r2 = st.columns(2)
+        with r1: kpi_kart_ciz("GELİR", f"{gelir:,.0f}", RENK_GELIR, "💰")
+        with r2: kpi_kart_ciz("GİDER", f"{gider:,.0f}", RENK_GIDER, "💸")
+        r3, r4 = st.columns(2)
+        with r3: kpi_kart_ciz("NET", f"{net:,.0f}", cr, ik)
+        with r4: kpi_kart_ciz("ÖDENMEMİŞ", f"{bekleyen:,.0f}", RENK_ODENMEMIS, "⏳")
+    else: st.info("Veri yok.")
 
-    # Sekmeler
     st.write("")
-    tab_giris, tab_analiz, tab_liste, tab_yonetim = st.tabs(["📝 Ekle", "📊 Grafik", "📋 Kayıt", "📂 Ayar"])
+    t1, t2, t3, t4 = st.tabs(["📝 Ekle", "📊 Grafik", "📋 Liste", "📂 Ayar"])
 
-    with tab_giris:
-        if arama_terimi: st.warning("Aramayı kapatın.")
+    with t1:
+        if arama_modu: st.warning("Aramayı kapatın")
         else:
             with st.container(border=True):
-                c_gir1, c_gir2 = st.columns([1.5, 1])
-                with c_gir1:
-                    tur_sec = st.radio("Tür", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
-                    kat_list = df_kat[df_kat["Tur"] == tur_sec]["Kategori"].tolist() if not df_kat.empty else []
-                    kat_sec = st.selectbox("Kategori", kat_list, index=None, placeholder="Kategori...", label_visibility="collapsed")
-                with c_gir2:
-                    st.write("") 
-                    tutar_gir = st.number_input("Tutar", min_value=0.0, step=50.0, label_visibility="collapsed", placeholder="0.00 ₺")
-                aciklama_gir = st.text_input("Açıklama", placeholder="#etiket (Opsiyonel)")
+                c_k, c_t = st.columns([1.5, 1])
+                with c_k:
+                    ts = st.radio("Tür", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
+                    kl = df_kat[df_kat["Tur"]==ts]["Kategori"].tolist() if not df_kat.empty else []
+                    ks = st.selectbox("Kat.", kl, index=None, label_visibility="collapsed", placeholder="Seç...")
+                with c_t:
+                    st.write("")
+                    tug = st.number_input("Tutar", step=50.0, label_visibility="collapsed")
+                ac = st.text_input("Not", placeholder="#etiket")
                 if st.button("KAYDET", type="primary", use_container_width=True):
-                    if secilen_yil_filtre == "Tüm Zamanlar" or secilen_ay_filtre == "Yılın Tamamı": st.error("Yıl/Ay Seç!")
-                    elif kat_sec and tutar_gir > 0:
+                    if secilen_yil == "Tüm" or secilen_ay == "Tüm": st.error("Yıl/Ay Seç")
+                    elif ks and tug > 0:
                         vg = 0
                         if not df_kat.empty:
-                            r = df_kat[df_kat["Kategori"]==kat_sec]
+                            r = df_kat[df_kat["Kategori"]==ks]
                             if not r.empty: vg = int(float(r.iloc[0]["VarsayilanGun"]))
-                        kt = tarih_olustur(secilen_yil_filtre, secilen_ay_filtre, vg)
-                        so = son_odeme_hesapla(kt, vg)
-                        yeni = pd.DataFrame([{"Tarih": pd.to_datetime(kt), "Kategori": kat_sec, "Tür": tur_sec, "Tutar": float(tutar_gir), "Son Ödeme Tarihi": so, "Açıklama": aciklama_gir, "Durum": False}])
-                        verileri_kaydet(conn, pd.concat([df, yeni], ignore_index=True))
-                        st.toast("✅ Kaydedildi!"); time.sleep(0.5); st.cache_data.clear(); st.rerun()
-                    else: st.warning("Eksik bilgi!")
+                        kt = tarih_olustur(secilen_yil, secilen_ay, vg)
+                        yeni = pd.DataFrame([{"Tarih": pd.to_datetime(kt), "Kategori": ks, "Tür": ts, "Tutar": float(tug), "Son Ödeme Tarihi": son_odeme_hesapla(kt, vg), "Açıklama": ac, "Durum": False}])
+                        verileri_kaydet(conn, pd.concat([df, yeni], ignore_index=True)); st.success("Ok"); time.sleep(0.5); st.rerun()
+                    else: st.warning("Eksik")
 
-    with tab_analiz:
+    with t2:
         if not df_filt.empty and "Gider" in df_filt["Tür"].values:
             sg = df_filt[df_filt["Tür"]=="Gider"].copy()
-            sg["Durum_Etiket"] = sg["Durum"].map({True: "Ödendi ✅", False: "Ödenmedi ❌"})
-            c1, c2 = st.columns(2)
-            with c1:
-                st.caption("Durum")
-                fig1 = px.pie(sg, values="Tutar", names="Durum_Etiket", hole=0.5, color="Durum_Etiket", color_discrete_map={"Ödendi ✅": RENK_GELIR, "Ödenmedi ❌": RENK_GIDER})
-                fig1.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=200, showlegend=False); st.plotly_chart(fig1, use_container_width=True)
-            with c2:
-                st.caption("Kategori")
-                fig2 = px.pie(sg, values="Tutar", names="Kategori", hole=0.5)
-                fig2.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=200, showlegend=False); st.plotly_chart(fig2, use_container_width=True)
-            
-            edf = etiketleri_analiz_et(sg)
-            if not edf.empty:
-                st.caption("Etiket Dağılımı")
-                st.plotly_chart(px.bar(edf, x="Etiket", y="Tutar", color="Etiket").update_layout(height=200, showlegend=False), use_container_width=True)
-        else: st.info("Veri yok.")
+            sg["D"] = sg["Durum"].map({True:"Ödendi", False:"Bekliyor"})
+            c_g1, c_g2 = st.columns(2)
+            with c_g1: st.caption("Durum"); st.plotly_chart(px.pie(sg, values="Tutar", names="D", hole=0.5, color="D", color_discrete_map={"Ödendi":RENK_GELIR, "Bekliyor":RENK_GIDER}).update_layout(margin=dict(t=0,b=0,l=0,r=0), height=180, showlegend=False), use_container_width=True)
+            with c_g2: st.caption("Kategori"); st.plotly_chart(px.pie(sg, values="Tutar", names="Kategori", hole=0.5).update_layout(margin=dict(t=0,b=0,l=0,r=0), height=180, showlegend=False), use_container_width=True)
+        else: st.info("Veri yok")
 
-    with tab_liste:
-        col_list_baslik, col_list_btn = st.columns([0.8, 0.2])
-        with col_list_baslik: st.caption("Kayıtlar")
-        with col_list_btn: st.download_button("📥", csv_indir(df), f"Yedek.csv", "text/csv", use_container_width=True)
+    with t3:
         if not df_filt.empty:
             edt = df_filt.sort_values("Tarih", ascending=False).copy()
             edt["Tarih"] = edt["Tarih"].dt.date
             if "Son Ödeme Tarihi" in edt.columns: edt["Son Ödeme Tarihi"] = pd.to_datetime(edt["Son Ödeme Tarihi"], errors='coerce').dt.date
-            if arama_terimi: st.dataframe(edt, hide_index=True, use_container_width=True)
+            if arama_modu: st.dataframe(edt, hide_index=True, use_container_width=True)
             else:
-                duzenli = st.data_editor(edt, column_config={"Durum": st.column_config.CheckboxColumn(default=False), "Tutar": st.column_config.NumberColumn(format="%.2f ₺"), "Kategori": st.column_config.SelectboxColumn(options=df_kat["Kategori"].unique().tolist()), "Tür": st.column_config.SelectboxColumn(options=["Gider", "Gelir"])}, hide_index=True, use_container_width=True, num_rows="dynamic")
+                duz = st.data_editor(edt, column_config={"Durum": st.column_config.CheckboxColumn(default=False), "Tutar": st.column_config.NumberColumn(format="%.0f"), "Kategori": st.column_config.SelectboxColumn(options=df_kat["Kategori"].unique().tolist()), "Tür": st.column_config.SelectboxColumn(options=["Gider", "Gelir"])}, hide_index=True, use_container_width=True, num_rows="dynamic")
                 if st.button("💾 Kaydet", use_container_width=True):
-                    dfr = df.drop(df_filt.index); duzenli["Tarih"] = pd.to_datetime(duzenli["Tarih"])
-                    verileri_kaydet(conn, pd.concat([dfr, duzenli], ignore_index=True)); st.success("Güncellendi"); st.cache_data.clear(); st.rerun()
-        else: st.write("Veri yok.")
+                    dfr = df.drop(df_filt.index); duz["Tarih"] = pd.to_datetime(duz["Tarih"])
+                    verileri_kaydet(conn, pd.concat([dfr, duz], ignore_index=True)); st.success("Ok"); st.rerun()
+        else: st.write("Boş")
 
-    with tab_yonetim:
-        c_ekle, c_duzenle = st.columns(2)
-        with c_ekle:
-            with st.form("kat_ekle"):
-                kt = st.radio("Tür", ["Gider", "Gelir"], horizontal=True)
-                ka = st.text_input("Yeni Kategori")
-                kg = st.number_input("Varsayılan Gün", 0, 31, 0)
+    with t4:
+        c1, c2 = st.columns(2)
+        with c1:
+            with st.form("ke"):
+                kt = st.radio("T", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
+                ka = st.text_input("Ad", label_visibility="collapsed", placeholder="Yeni Kategori")
+                kg = st.number_input("Gün", 0, 31, 0, label_visibility="collapsed")
                 if st.form_submit_button("Ekle"):
                     gk = conn.read(worksheet="Kategoriler", ttl=0) if not df_kat.empty else df_kat
                     if ka and ka not in gk["Kategori"].values:
-                        kategorileri_kaydet(conn, pd.concat([gk, pd.DataFrame([{"Kategori": ka, "Tur": kt, "VarsayilanGun": kg}])], ignore_index=True)); st.success("Eklendi!"); st.rerun()
-        with c_duzenle:
+                        kategorileri_kaydet(conn, pd.concat([gk, pd.DataFrame([{"Kategori": ka, "Tur": kt, "VarsayilanGun": kg}])], ignore_index=True)); st.success("Ok"); st.rerun()
+        with c2:
             if not df_kat.empty:
-                sel_k = st.selectbox("Düzenle", df_kat["Kategori"].tolist())
-                row_k = df_kat[df_kat["Kategori"] == sel_k].iloc[0]
-                new_ad = st.text_input("Ad", value=row_k['Kategori'])
-                new_tur = st.selectbox("Tür", ["Gider", "Gelir"], index=0 if row_k['Tur']=="Gider" else 1)
-                new_gun = st.number_input("Gün", 0, 31, int(float(row_k['VarsayilanGun'])))
-                c_upd, c_del = st.columns(2)
-                if c_upd.button("Güncelle"):
-                    df_kat.loc[df_kat["Kategori"]==sel_k, ["Kategori","Tur","VarsayilanGun"]] = [new_ad, new_tur, new_gun]
-                    kategorileri_kaydet(conn, df_kat)
-                    if sel_k != new_ad and not df.empty: df.loc[df["Kategori"]==sel_k, "Kategori"] = new_ad; verileri_kaydet(conn, df)
-                    st.success("Oldu!"); st.rerun()
-                if c_del.button("Sil"):
-                    if sel_k in df["Kategori"].values: st.error("Kullanımda!")
-                    else: kategorileri_kaydet(conn, df_kat[df_kat["Kategori"]!=sel_k]); st.success("Silindi"); st.rerun()
+                sk = st.selectbox("Sil", df_kat["Kategori"].tolist(), label_visibility="collapsed")
+                if st.button("Sil", type="primary", use_container_width=True):
+                    if sk in df["Kategori"].values: st.error("Dolu!")
+                    else: kategorileri_kaydet(conn, df_kat[df_kat["Kategori"]!=sk]); st.success("Ok"); st.rerun()
 
-    # Sidebar (Piyasa & Çıkış)
     with st.sidebar:
-        st.caption("Piyasa (Canlı)")
+        st.caption("Piyasa")
         usd, eur, gram = piyasa_verileri_getir()
         if usd > 0:
-            st.write(f"💵 **USD:** {usd:.2f} ₺")
-            st.write(f"💶 **EUR:** {eur:.2f} ₺")
-            st.write(f"🥇 **ALTIN:** {gram:.0f} ₺")
+            st.write(f"💵 {usd:.2f}")
+            st.write(f"💶 {eur:.2f}")
+            st.write(f"🥇 {gram:.0f}")
         st.markdown("---")
         if st.button("🚪 Çıkış", use_container_width=True): st.session_state.giris_yapildi = False; st.rerun()
