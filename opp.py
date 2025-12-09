@@ -5,23 +5,16 @@ from datetime import datetime, date, timedelta
 import time
 import re
 
-# --- 1. SAYFA AYARLARI (EN BAŞTA OLMALI) ---
-st.set_page_config(page_title="Bütçe Makinesi v42", page_icon="🐦", layout="wide")
+# --- 1. SAYFA AYARLARI (EN HAFİF HALİYLE) ---
+st.set_page_config(page_title="Bütçe Makinesi v43", page_icon="🐦", layout="wide")
 
-# --- CUSTOM CSS (SADELEŞTİRİLMİŞ) ---
+# --- CUSTOM CSS ---
 st.markdown("""
 <style>
-    /* Mobildeki boşlukları optimize et */
-    .block-container {
-        padding-top: 1rem;
-        padding-bottom: 3rem;
-    }
-    
-    /* Gereksiz elementleri gizle */
+    .block-container { padding-top: 1rem; padding-bottom: 3rem; }
     #MainMenu {visibility: hidden;} 
     footer {visibility: hidden;}
     
-    /* Kart Tasarımı */
     div.kpi-card {
         background-color: white;
         border-radius: 12px;
@@ -42,31 +35,17 @@ st.markdown("""
         font-weight: 700;
         margin-bottom: 0;
     }
-    
-    /* Sidebar Rengi */
     [data-testid="stSidebar"] { background-color: #f8f9fa; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- RENKLER & SABİTLER ---
+# --- SABİTLER ---
 RENK_GELIR = "#28a745"
 RENK_GIDER = "#dc3545"
 RENK_NET = "#007bff"
 RENK_ODENMEMIS = "#ffc107"
 KOLONLAR = ["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"]
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
-
-# --- KRİTİK: BAĞLANTILARI SADECE GEREKTİĞİNDE YÜKLE ---
-# Bu kütüphaneleri en başta değil, fonksiyon içinde çağıracağız.
-# Böylece giriş ekranı açılırken internet bağlantısı beklemez.
-
-def get_google_connection():
-    from streamlit_gsheets import GSheetsConnection
-    return st.connection("gsheets", type=GSheetsConnection)
-
-def get_yfinance():
-    import yfinance as yf
-    return yf
 
 # --- YARDIMCI FONKSİYONLAR ---
 def kpi_kart_ciz(baslik, deger, renk, ikon):
@@ -77,10 +56,49 @@ def kpi_kart_ciz(baslik, deger, renk, ikon):
     </div>
     """, unsafe_allow_html=True)
 
+def csv_indir(df): return df.to_csv(index=False).encode('utf-8')
+
+def tarih_olustur(yil, ay_ismi, gun):
+    try: ay_index = AYLAR.index(ay_ismi) + 1
+    except: ay_index = datetime.now().month
+    try: h_gun = int(float(gun)); 
+    except: h_gun = 1
+    if h_gun <= 0: h_gun = 1
+    try: return date(yil, ay_index, h_gun)
+    except ValueError: return date(yil, ay_index, 28)
+
+def son_odeme_hesapla(islem_tarihi, varsayilan_gun):
+    if not varsayilan_gun or varsayilan_gun == 0: return islem_tarihi
+    try:
+        v_gun = int(float(varsayilan_gun))
+        return tarih_olustur(islem_tarihi.year, AYLAR[islem_tarihi.month-1], v_gun)
+    except: return islem_tarihi
+
+def etiketleri_analiz_et(df):
+    etiket_verisi = []
+    for _, row in df.iterrows():
+        aciklama = str(row["Açıklama"]).lower()
+        bulunanlar = re.findall(r"#(\w+)", aciklama)
+        if bulunanlar:
+            bolunmus_tutar = row["Tutar"] / len(bulunanlar)
+            for etiket in bulunanlar: etiket_verisi.append({"Etiket": etiket, "Tutar": bolunmus_tutar})
+    if etiket_verisi: return pd.DataFrame(etiket_verisi).groupby("Etiket")["Tutar"].sum().reset_index().sort_values("Tutar", ascending=False)
+    else: return pd.DataFrame()
+
+# --- AĞIR YÜKLER (FONKSİYON İÇİNE GİZLENDİ) ---
+# Bu fonksiyonlar sadece çağrıldığında kütüphaneyi yükler.
+# Böylece uygulama açılışta bekleme yapmaz.
+
+def get_connection():
+    # Kütüphaneyi BURADA yüklüyoruz
+    from streamlit_gsheets import GSheetsConnection
+    return st.connection("gsheets", type=GSheetsConnection)
+
 @st.cache_data(ttl=3600) 
 def piyasa_verileri_getir():
     try:
-        yf = get_yfinance() # Sadece burada yükle
+        # Kütüphaneyi BURADA yüklüyoruz
+        import yfinance as yf
         tickers = yf.download("TRY=X EURTRY=X GC=F", period="1d", progress=False)['Close']
         dolar = tickers['TRY=X'].iloc[-1]
         euro = tickers['EURTRY=X'].iloc[-1]
@@ -89,9 +107,7 @@ def piyasa_verileri_getir():
         return dolar, euro, gram_altin
     except: return 0, 0, 0
 
-def csv_indir(df): return df.to_csv(index=False).encode('utf-8')
-
-# --- VERİTABANI İŞLEMLERİ ---
+# --- VERİTABANI SORGULARI ---
 def verileri_cek(conn):
     try:
         df = conn.read(worksheet="Veriler", ttl=0)
@@ -122,69 +138,39 @@ def verileri_kaydet(conn, df):
 
 def kategorileri_kaydet(conn, df): conn.update(worksheet="Kategoriler", data=df)
 
-def tarih_olustur(yil, ay_ismi, gun):
-    try: ay_index = AYLAR.index(ay_ismi) + 1
-    except: ay_index = datetime.now().month
-    try: h_gun = int(float(gun)); 
-    except: h_gun = 1
-    if h_gun <= 0: h_gun = 1
-    try: return date(yil, ay_index, h_gun)
-    except ValueError: return date(yil, ay_index, 28)
-
-def son_odeme_hesapla(islem_tarihi, varsayilan_gun):
-    if not varsayilan_gun or varsayilan_gun == 0: return islem_tarihi
-    try:
-        v_gun = int(float(varsayilan_gun))
-        return tarih_olustur(islem_tarihi.year, AYLAR[islem_tarihi.month-1], v_gun)
-    except: return islem_tarihi
-
-def etiketleri_analiz_et(df):
-    etiket_verisi = []
-    for _, row in df.iterrows():
-        aciklama = str(row["Açıklama"]).lower()
-        bulunanlar = re.findall(r"#(\w+)", aciklama)
-        if bulunanlar:
-            bolunmus_tutar = row["Tutar"] / len(bulunanlar)
-            for etiket in bulunanlar: etiket_verisi.append({"Etiket": etiket, "Tutar": bolunmus_tutar})
-    if etiket_verisi: return pd.DataFrame(etiket_verisi).groupby("Etiket")["Tutar"].sum().reset_index().sort_values("Tutar", ascending=False)
-    else: return pd.DataFrame()
 
 # ==========================================
-# --- UYGULAMA MANTIĞI (GÜVENLİ AKIŞ) ---
+# --- ANA AKIŞ ---
 # ==========================================
 
-# 1. OTURUM KONTROLÜ
 if "giris_yapildi" not in st.session_state:
     st.session_state.giris_yapildi = False
 
-# Eğer localde çalışıyorsan ve şifre yoksa direkt aç
+# Geliştirici modu (Secrets yoksa)
 if "genel" not in st.secrets:
     st.session_state.giris_yapildi = True
 
-# 2. GİRİŞ EKRANI (Hafif Mod - Bağlantı Yok)
+# --- 1. EKRAN: GİRİŞ (İNTERNETSİZ ÇALIŞIR) ---
 if not st.session_state.giris_yapildi:
-    # Boşluk bırakalım ki mobilde yukarı yapışmasın
     st.markdown("<br><br>", unsafe_allow_html=True)
-    
     with st.container(border=True):
         st.markdown("<h3 style='text-align: center;'>🐦 Giriş</h3>", unsafe_allow_html=True)
         
-        # Form kullanarak enter'a basınca girmesini sağlayalım
-        with st.form("giris_formu"):
+        with st.form("login_form"):
             sifre = st.text_input("Şifre", type="password")
-            giris_btn = st.form_submit_button("Giriş Yap", type="primary", use_container_width=True)
+            submit = st.form_submit_button("Giriş Yap", type="primary", use_container_width=True)
             
-            if giris_btn:
+            if submit:
                 if sifre == st.secrets["genel"]["sifre"]:
                     st.session_state.giris_yapildi = True
                     st.rerun()
                 else:
-                    st.error("Hatalı Şifre!")
+                    st.error("Hatalı Şifre")
 
-# 3. ANA UYGULAMA (Sadece giriş başarılıysa yüklenir)
+# --- 2. EKRAN: UYGULAMA (BURADA BAĞLANIR) ---
 else:
-    # --- AĞIR YÜKLEME BURADA BAŞLAR ---
-    conn = get_google_connection()
+    # Kullanıcı içeri girdi, şimdi interneti kullanalım
+    conn = get_connection()
     df = verileri_cek(conn)
     df_kat = kategorileri_cek(conn)
 
@@ -266,6 +252,7 @@ else:
         gider = df_filt[df_filt["Tür"] == "Gider"]["Tutar"].sum()
         net = gelir - gider
         bekleyen = df_filt[(df_filt["Tür"]=="Gider") & (df_filt["Durum"]==False)]["Tutar"].sum()
+        
         if net > 0: net_ikon = "😃"; net_renk = RENK_GELIR
         elif net < 0: net_ikon = "☹️"; net_renk = RENK_GIDER
         else: net_ikon = "😐"; net_renk = RENK_NET
@@ -323,7 +310,6 @@ else:
                 fig2 = px.pie(sg, values="Tutar", names="Kategori", hole=0.5)
                 fig2.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=200, showlegend=False); st.plotly_chart(fig2, use_container_width=True)
             
-            # Etiket Analizi (Varsa)
             edf = etiketleri_analiz_et(sg)
             if not edf.empty:
                 st.caption("Etiket Dağılımı")
@@ -333,7 +319,7 @@ else:
     with tab_liste:
         col_list_baslik, col_list_btn = st.columns([0.8, 0.2])
         with col_list_baslik: st.caption("Kayıtlar")
-        with col_list_btn: st.download_button("📥 Excel", csv_indir(df), f"Yedek.csv", "text/csv", use_container_width=True)
+        with col_list_btn: st.download_button("📥", csv_indir(df), f"Yedek.csv", "text/csv", use_container_width=True)
         if not df_filt.empty:
             edt = df_filt.sort_values("Tarih", ascending=False).copy()
             edt["Tarih"] = edt["Tarih"].dt.date
