@@ -2,25 +2,26 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, date, timedelta
-from streamlit_gsheets import GSheetsConnection
 import time
 import re
-import yfinance as yf
 
-# --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Bütçe Makinesi v41", page_icon="🐦", layout="wide")
+# --- 1. SAYFA AYARLARI (EN BAŞTA OLMALI) ---
+st.set_page_config(page_title="Bütçe Makinesi v42", page_icon="🐦", layout="wide")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS (SADELEŞTİRİLMİŞ) ---
 st.markdown("""
 <style>
-    /* Mobilde üst ve alt boşlukları ayarla */
+    /* Mobildeki boşlukları optimize et */
     .block-container {
-        padding-top: 1.5rem;
+        padding-top: 1rem;
         padding-bottom: 3rem;
     }
+    
+    /* Gereksiz elementleri gizle */
     #MainMenu {visibility: hidden;} 
     footer {visibility: hidden;}
     
+    /* Kart Tasarımı */
     div.kpi-card {
         background-color: white;
         border-radius: 12px;
@@ -41,17 +42,31 @@ st.markdown("""
         font-weight: 700;
         margin-bottom: 0;
     }
+    
+    /* Sidebar Rengi */
     [data-testid="stSidebar"] { background-color: #f8f9fa; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- RENK PALETİ & SABİTLER ---
+# --- RENKLER & SABİTLER ---
 RENK_GELIR = "#28a745"
 RENK_GIDER = "#dc3545"
 RENK_NET = "#007bff"
 RENK_ODENMEMIS = "#ffc107"
 KOLONLAR = ["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"]
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+
+# --- KRİTİK: BAĞLANTILARI SADECE GEREKTİĞİNDE YÜKLE ---
+# Bu kütüphaneleri en başta değil, fonksiyon içinde çağıracağız.
+# Böylece giriş ekranı açılırken internet bağlantısı beklemez.
+
+def get_google_connection():
+    from streamlit_gsheets import GSheetsConnection
+    return st.connection("gsheets", type=GSheetsConnection)
+
+def get_yfinance():
+    import yfinance as yf
+    return yf
 
 # --- YARDIMCI FONKSİYONLAR ---
 def kpi_kart_ciz(baslik, deger, renk, ikon):
@@ -65,6 +80,7 @@ def kpi_kart_ciz(baslik, deger, renk, ikon):
 @st.cache_data(ttl=3600) 
 def piyasa_verileri_getir():
     try:
+        yf = get_yfinance() # Sadece burada yükle
         tickers = yf.download("TRY=X EURTRY=X GC=F", period="1d", progress=False)['Close']
         dolar = tickers['TRY=X'].iloc[-1]
         euro = tickers['EURTRY=X'].iloc[-1]
@@ -75,10 +91,7 @@ def piyasa_verileri_getir():
 
 def csv_indir(df): return df.to_csv(index=False).encode('utf-8')
 
-# --- VERİ İŞLEMLERİ (BAĞLANTIYI GEREKTİĞİNDE AÇACAĞIZ) ---
-def get_connection():
-    return st.connection("gsheets", type=GSheetsConnection)
-
+# --- VERİTABANI İŞLEMLERİ ---
 def verileri_cek(conn):
     try:
         df = conn.read(worksheet="Veriler", ttl=0)
@@ -125,41 +138,57 @@ def son_odeme_hesapla(islem_tarihi, varsayilan_gun):
         return tarih_olustur(islem_tarihi.year, AYLAR[islem_tarihi.month-1], v_gun)
     except: return islem_tarihi
 
+def etiketleri_analiz_et(df):
+    etiket_verisi = []
+    for _, row in df.iterrows():
+        aciklama = str(row["Açıklama"]).lower()
+        bulunanlar = re.findall(r"#(\w+)", aciklama)
+        if bulunanlar:
+            bolunmus_tutar = row["Tutar"] / len(bulunanlar)
+            for etiket in bulunanlar: etiket_verisi.append({"Etiket": etiket, "Tutar": bolunmus_tutar})
+    if etiket_verisi: return pd.DataFrame(etiket_verisi).groupby("Etiket")["Tutar"].sum().reset_index().sort_values("Tutar", ascending=False)
+    else: return pd.DataFrame()
+
 # ==========================================
-# --- UYGULAMA MANTIĞI (BLOK SİSTEMİ) ---
+# --- UYGULAMA MANTIĞI (GÜVENLİ AKIŞ) ---
 # ==========================================
 
-# Oturum Durumu Kontrolü
+# 1. OTURUM KONTROLÜ
 if "giris_yapildi" not in st.session_state:
     st.session_state.giris_yapildi = False
 
-# --- EKRAN 1: GİRİŞ EKRANI ---
+# Eğer localde çalışıyorsan ve şifre yoksa direkt aç
+if "genel" not in st.secrets:
+    st.session_state.giris_yapildi = True
+
+# 2. GİRİŞ EKRANI (Hafif Mod - Bağlantı Yok)
 if not st.session_state.giris_yapildi:
-    # Eğer secrets yoksa (Lokal mod) direkt geçir
-    if "genel" not in st.secrets:
-        st.session_state.giris_yapildi = True
-        st.rerun()
-    else:
-        st.write("")
-        st.write("")
-        with st.container(border=True):
-            st.markdown("<h3 style='text-align: center;'>🐦 Bütçe Makinesi</h3>", unsafe_allow_html=True)
+    # Boşluk bırakalım ki mobilde yukarı yapışmasın
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    
+    with st.container(border=True):
+        st.markdown("<h3 style='text-align: center;'>🐦 Giriş</h3>", unsafe_allow_html=True)
+        
+        # Form kullanarak enter'a basınca girmesini sağlayalım
+        with st.form("giris_formu"):
             sifre = st.text_input("Şifre", type="password")
-            if st.button("Giriş Yap", type="primary", use_container_width=True):
+            giris_btn = st.form_submit_button("Giriş Yap", type="primary", use_container_width=True)
+            
+            if giris_btn:
                 if sifre == st.secrets["genel"]["sifre"]:
                     st.session_state.giris_yapildi = True
                     st.rerun()
                 else:
                     st.error("Hatalı Şifre!")
 
-# --- EKRAN 2: ANA UYGULAMA (Sadece giriş yapıldıysa çalışır) ---
+# 3. ANA UYGULAMA (Sadece giriş başarılıysa yüklenir)
 else:
-    # Bağlantıyı ve Verileri Burada Başlatıyoruz
-    conn = get_connection()
+    # --- AĞIR YÜKLEME BURADA BAŞLAR ---
+    conn = get_google_connection()
     df = verileri_cek(conn)
     df_kat = kategorileri_cek(conn)
 
-    # Veri Tipi Düzeltmeleri
+    # Veri tiplerini düzelt
     if not df.empty:
         df["Tarih"] = pd.to_datetime(df["Tarih"], errors='coerce')
         df = df.dropna(subset=["Tarih"])
@@ -169,25 +198,24 @@ else:
         if "Tutar" in df.columns: df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
         else: df["Tutar"] = 0.0
 
-    # --- ÜST BAŞLIK & YENİLEME ---
+    # Üst Bar
     col_header, col_refresh = st.columns([0.80, 0.20], gap="small")
     with col_header: st.markdown("### 🐦 Bütçe Makinesi")
     with col_refresh:
         if st.button("🔄", help="Yenile", use_container_width=True):
             st.cache_data.clear(); st.rerun()
 
-    # --- ANA EKRAN KONTROLLERİ ---
+    # Ana Filtreler
     c_arama_btn, c_yil_ana, c_ay_ana = st.columns([0.15, 0.35, 0.50], gap="small")
-    with c_arama_btn:
-        arama_aktif = st.checkbox("🔍", help="Arama Modunu Aç")
+    with c_arama_btn: arama_aktif = st.checkbox("🔍", help="Arama")
 
     if arama_aktif:
         with c_yil_ana: st.write("") 
-        with c_ay_ana: arama_terimi = st.text_input("Kelime Ara...", label_visibility="collapsed", placeholder="Migros...")
+        with c_ay_ana: arama_terimi = st.text_input("Ara...", label_visibility="collapsed")
         if arama_terimi:
             mask = df.astype(str).apply(lambda x: x.str.contains(arama_terimi, case=False)).any(axis=1)
             df_filt = df[mask]; baslik = f"🔍 '{arama_terimi}'"; ay_no = 0; secilen_ay_filtre = "Arama"
-        else: df_filt = df; baslik = "Tüm Kayıtlar"; ay_no = 0; secilen_ay_filtre = "Yılın Tamamı"
+        else: df_filt = df; baslik = "Hepsi"; ay_no = 0; secilen_ay_filtre = "Yılın Tamamı"
     else:
         arama_terimi = None
         if not df.empty and "Tarih" in df.columns:
@@ -206,7 +234,7 @@ else:
                 else: baslik = f"{secilen_yil_filtre} Tamamı"; ay_no = 0
         else: df_filt = df; baslik = "Veri Yok"; ay_no = 0
 
-    # --- EK ARAÇLAR (KOPYALA) ---
+    # Araçlar
     if not arama_aktif and secilen_ay_filtre != "Yılın Tamamı" and secilen_yil_filtre != "Tüm Zamanlar":
         with st.expander("🛠️ İşlemler"):
             c_kopya, c_indir = st.columns(2)
@@ -232,7 +260,7 @@ else:
 
     st.write("") 
 
-    # --- KPI KARTLARI ---
+    # Kartlar
     if not df_filt.empty:
         gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
         gider = df_filt[df_filt["Tür"] == "Gider"]["Tutar"].sum()
@@ -242,15 +270,15 @@ else:
         elif net < 0: net_ikon = "☹️"; net_renk = RENK_GIDER
         else: net_ikon = "😐"; net_renk = RENK_NET
         
-        row1_c1, row1_c2 = st.columns(2)
-        with row1_c1: kpi_kart_ciz("GELİR", f"{gelir:,.0f} ₺", RENK_GELIR, "💰")
-        with row1_c2: kpi_kart_ciz("GİDER", f"{gider:,.0f} ₺", RENK_GIDER, "💸")
-        row2_c1, row2_c2 = st.columns(2)
-        with row2_c1: kpi_kart_ciz("NET", f"{net:,.0f} ₺", net_renk, net_ikon)
-        with row2_c2: kpi_kart_ciz("ÖDENMEMİŞ", f"{bekleyen:,.0f} ₺", RENK_ODENMEMIS, "⏳")
+        r1_c1, r1_c2 = st.columns(2)
+        with r1_c1: kpi_kart_ciz("GELİR", f"{gelir:,.0f} ₺", RENK_GELIR, "💰")
+        with r1_c2: kpi_kart_ciz("GİDER", f"{gider:,.0f} ₺", RENK_GIDER, "💸")
+        r2_c1, r2_c2 = st.columns(2)
+        with r2_c1: kpi_kart_ciz("NET", f"{net:,.0f} ₺", net_renk, net_ikon)
+        with r2_c2: kpi_kart_ciz("ÖDENMEMİŞ", f"{bekleyen:,.0f} ₺", RENK_ODENMEMIS, "⏳")
     else: st.info("Kayıt yok.")
 
-    # --- SEKMELER ---
+    # Sekmeler
     st.write("")
     tab_giris, tab_analiz, tab_liste, tab_yonetim = st.tabs(["📝 Ekle", "📊 Grafik", "📋 Kayıt", "📂 Ayar"])
 
@@ -294,12 +322,18 @@ else:
                 st.caption("Kategori")
                 fig2 = px.pie(sg, values="Tutar", names="Kategori", hole=0.5)
                 fig2.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=200, showlegend=False); st.plotly_chart(fig2, use_container_width=True)
+            
+            # Etiket Analizi (Varsa)
+            edf = etiketleri_analiz_et(sg)
+            if not edf.empty:
+                st.caption("Etiket Dağılımı")
+                st.plotly_chart(px.bar(edf, x="Etiket", y="Tutar", color="Etiket").update_layout(height=200, showlegend=False), use_container_width=True)
         else: st.info("Veri yok.")
 
     with tab_liste:
         col_list_baslik, col_list_btn = st.columns([0.8, 0.2])
         with col_list_baslik: st.caption("Kayıtlar")
-        with col_list_btn: st.download_button("📥", csv_indir(df), f"Yedek.csv", "text/csv", use_container_width=True)
+        with col_list_btn: st.download_button("📥 Excel", csv_indir(df), f"Yedek.csv", "text/csv", use_container_width=True)
         if not df_filt.empty:
             edt = df_filt.sort_values("Tarih", ascending=False).copy()
             edt["Tarih"] = edt["Tarih"].dt.date
@@ -340,7 +374,7 @@ else:
                     if sel_k in df["Kategori"].values: st.error("Kullanımda!")
                     else: kategorileri_kaydet(conn, df_kat[df_kat["Kategori"]!=sel_k]); st.success("Silindi"); st.rerun()
 
-    # --- SIDEBAR (Sadece Piyasa & Çıkış) ---
+    # Sidebar (Piyasa & Çıkış)
     with st.sidebar:
         st.caption("Piyasa (Canlı)")
         usd, eur, gram = piyasa_verileri_getir()
