@@ -6,25 +6,31 @@ import time
 import re
 
 # --- 1. AYARLAR ---
-st.set_page_config(page_title="Bütçe v46", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Bütçe v47", page_icon="🐦", layout="wide")
 
-# --- 2. TEMİZ VE GÜVENLİ CSS (KALINTISIZ) ---
+# --- 2. GÖRSEL TASARIM (MENÜSÜZ & TAM EKRAN) ---
 st.markdown("""
 <style>
-    /* ÜST BOŞLUK AYARI: Mobilde başlığın kesilmesini önleyen kritik ayar */
+    /* Sol Menüyü Tamamen Yok Et */
+    [data-testid="stSidebar"] {display: none;}
+    
+    /* Üst boşluğu ayarla (Başlık kesilmesin) */
     .block-container {
-        padding-top: 4rem !important; 
+        padding-top: 2rem !important;
         padding-bottom: 3rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
     }
     
-    /* Sadece alt bilgiyi ve menü ikonunu gizle, header'ı çökertme */
+    /* Gereksizleri gizle */
     #MainMenu {visibility: hidden;} 
     footer {visibility: hidden;}
+    header {visibility: hidden;} 
     
-    /* KART TASARIMI (Modern ve Okunaklı) */
+    /* Kart Tasarımı */
     div.kpi-card {
         background-color: white;
-        border-radius: 10px;
+        border-radius: 12px;
         padding: 12px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         text-align: center;
@@ -44,12 +50,22 @@ st.markdown("""
         margin-bottom: 0;
     }
     
-    /* Yan menü rengi */
-    [data-testid="stSidebar"] { background-color: #f8f9fa; }
+    /* Piyasa Bilgisi Stili */
+    .market-info {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #555;
+        background-color: #f8f9fa;
+        padding: 5px 10px;
+        border-radius: 8px;
+        border: 1px solid #eee;
+        display: inline-block;
+        margin-right: 5px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- SABİTLER ---
+# --- RENKLER ---
 RENK_GELIR = "#28a745"
 RENK_GIDER = "#dc3545"
 RENK_NET = "#007bff"
@@ -57,8 +73,7 @@ RENK_ODENMEMIS = "#ffc107"
 KOLONLAR = ["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"]
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 
-# --- BAĞLANTI & KÜTÜPHANELER (LAZY LOAD) ---
-# Bu fonksiyonlar çağrılmadıkça kütüphaneleri yüklemez, açılışı hızlandırır.
+# --- BAĞLANTI (LAZY LOAD) ---
 def get_connection():
     from streamlit_gsheets import GSheetsConnection
     return st.connection("gsheets", type=GSheetsConnection)
@@ -75,7 +90,7 @@ def piyasa_verileri_getir():
         return dolar, euro, gram_altin
     except: return 0, 0, 0
 
-# --- YARDIMCILAR ---
+# --- FONKSİYONLAR ---
 def kpi_kart_ciz(baslik, deger, renk, ikon):
     st.markdown(f"""
     <div class="kpi-card" style="border-top: 4px solid {renk};">
@@ -154,7 +169,7 @@ if "genel" not in st.secrets: st.session_state.giris_yapildi = True
 if not st.session_state.giris_yapildi:
     st.markdown("<br><br>", unsafe_allow_html=True)
     with st.container(border=True):
-        st.markdown("<h2 style='text-align: center; color: #555;'>🐦 Bütçe Giriş</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: #555;'>🐦 Giriş</h2>", unsafe_allow_html=True)
         with st.form("giris_formu"):
             sifre = st.text_input("Şifre", type="password")
             if st.form_submit_button("Giriş Yap", type="primary", use_container_width=True):
@@ -163,7 +178,7 @@ if not st.session_state.giris_yapildi:
                     st.rerun()
                 else: st.error("Hatalı Şifre!")
 
-# --- ANA UYGULAMA ---
+# --- ANA EKRAN ---
 else:
     conn = get_connection()
     df = verileri_cek(conn)
@@ -179,14 +194,40 @@ else:
         if "Tutar" in df.columns: df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
         else: df["Tutar"] = 0.0
 
-    # 1. BAŞLIK VE YENİLEME
-    c1, c2 = st.columns([0.80, 0.20], gap="small")
-    with c1: st.markdown("### 🐦 Bütçe Makinesi")
-    with c2: 
-        if st.button("🔄", help="Yenile", use_container_width=True):
-            st.cache_data.clear(); st.rerun()
+    # ==========================
+    # --- ÜST BİLGİ ÇUBUĞU ---
+    # ==========================
+    
+    # Piyasa Verileri ve Butonlar (Tek Satırda)
+    usd, eur, gram = piyasa_verileri_getir()
+    
+    # Kolon düzeni: [Piyasa Bilgisi ..... Boşluk ..... Yenile | Çıkış]
+    c_info, c_space, c_btns = st.columns([0.65, 0.05, 0.30])
+    
+    with c_info:
+        if usd > 0:
+            st.markdown(f"""
+            <div style="display:flex; gap:5px; align-items:center;">
+                <span class="market-info">💵 {usd:.2f}</span>
+                <span class="market-info">💶 {eur:.2f}</span>
+                <span class="market-info">🥇 {gram:.0f}</span>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.caption("Piyasa verisi yükleniyor...")
 
-    # 2. ANA FİLTRELER (Mobilde En Üstte)
+    with c_btns:
+        b_ref, b_out = st.columns(2)
+        with b_ref:
+            if st.button("🔄", help="Yenile"):
+                st.cache_data.clear(); st.rerun()
+        with b_out:
+            if st.button("🚪", help="Çıkış"):
+                st.session_state.giris_yapildi = False; st.rerun()
+
+    st.markdown("---") # Ayırıcı çizgi
+
+    # --- ANA FİLTRELER (ÜSTTE) ---
     c_ara, c_yil, c_ay = st.columns([0.15, 0.35, 0.50], gap="small")
     with c_ara: 
         st.write("")
@@ -216,32 +257,8 @@ else:
                 ay_no = AYLAR.index(secilen_ay) + 1
                 df_filt = df_filt[df_filt["Tarih"].dt.month == ay_no]
 
-    # 3. ARAÇLAR (Kopyala/İndir)
-    if not arama_modu and secilen_ay != "Tüm" and secilen_yil != "Tüm":
-        with st.expander("🛠️ Kopyala / İndir"):
-            ec1, ec2 = st.columns(2)
-            with ec1: st.download_button("📥 Excel", csv_indir(df), "yedek.csv", "text/csv", use_container_width=True)
-            with ec2:
-                if st.button("⏮️ Kopyala", use_container_width=True):
-                    hy = secilen_yil; ha = AYLAR.index(secilen_ay) + 1
-                    if ha == 1: ka = 12; ky = hy - 1
-                    else: ka = ha - 1; ky = hy
-                    kdf = df[(df["Tarih"].dt.year == ky) & (df["Tarih"].dt.month == ka) & (df["Tür"] == "Gider")]
-                    if not kdf.empty:
-                        kopya = []
-                        for _, r in kdf.iterrows():
-                            kb = df_kat[df_kat["Kategori"] == r["Kategori"]]
-                            if not kb.empty and int(float(kb.iloc[0]["VarsayilanGun"])) > 0:
-                                vg = int(float(kb.iloc[0]["VarsayilanGun"]))
-                                yt = tarih_olustur(hy, secilen_ay, vg)
-                                kopya.append({"Tarih": pd.to_datetime(yt), "Kategori": r["Kategori"], "Tür": "Gider", "Tutar": r["Tutar"], "Son Ödeme Tarihi": son_odeme_hesapla(yt, vg), "Açıklama": f"{r['Açıklama']} (Kopya)", "Durum": False})
-                        if kopya: verileri_kaydet(conn, pd.concat([df, pd.DataFrame(kopya)], ignore_index=True)); st.success("Tamam"); time.sleep(1); st.rerun()
-                        else: st.warning("Sabit yok")
-                    else: st.error("Veri yok")
-
+    # --- KARTLAR (KPI) ---
     st.write("")
-
-    # 4. KARTLAR
     if not df_filt.empty:
         gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
         gider = df_filt[df_filt["Tür"] == "Gider"]["Tutar"].sum()
@@ -258,11 +275,11 @@ else:
         r3, r4 = st.columns(2)
         with r3: kpi_kart_ciz("NET", f"{net:,.0f}", cr, ik)
         with r4: kpi_kart_ciz("ÖDENMEMİŞ", f"{bekleyen:,.0f}", RENK_ODENMEMIS, "⏳")
-    else: st.info("Kayıt yok.")
+    else: st.info("Veri yok.")
 
     st.write("")
     
-    # 5. SEKMELER
+    # --- İÇERİK SEKMELERİ ---
     t1, t2, t3, t4 = st.tabs(["📝 Ekle", "📊 Grafik", "📋 Liste", "📂 Ayar"])
 
     with t1:
@@ -276,7 +293,7 @@ else:
                     ks = st.selectbox("Kat.", kl, index=None, label_visibility="collapsed", placeholder="Seç...")
                 with c_t:
                     st.write("")
-                    tug = st.number_input("Tutar", step=50.0, label_visibility="collapsed", placeholder="0.00 ₺")
+                    tug = st.number_input("Tutar", step=50.0, label_visibility="collapsed")
                 ac = st.text_input("Not", placeholder="#etiket")
                 if st.button("KAYDET", type="primary", use_container_width=True):
                     if secilen_yil == "Tüm" or secilen_ay == "Tüm": st.error("Yıl/Ay Seç")
@@ -315,6 +332,32 @@ else:
         else: st.write("Boş")
 
     with t4:
+        # Araçlar (Kopyala/İndir) - Ayarlar Sekmesine Taşındı
+        st.caption("Araçlar")
+        c_kop, c_ind = st.columns(2)
+        with c_ind: st.download_button("📥 Excel İndir", csv_indir(df), "yedek.csv", "text/csv", use_container_width=True)
+        with c_kop:
+            if not arama_modu and secilen_ay != "Tüm" and secilen_yil != "Tüm":
+                if st.button("⏮️ Ayı Kopyala", use_container_width=True):
+                    hy = secilen_yil; ha = AYLAR.index(secilen_ay) + 1
+                    if ha == 1: ka = 12; ky = hy - 1
+                    else: ka = ha - 1; ky = hy
+                    kdf = df[(df["Tarih"].dt.year == ky) & (df["Tarih"].dt.month == ka) & (df["Tür"] == "Gider")]
+                    if not kdf.empty:
+                        kopya = []
+                        for _, r in kdf.iterrows():
+                            kb = df_kat[df_kat["Kategori"] == r["Kategori"]]
+                            if not kb.empty and int(float(kb.iloc[0]["VarsayilanGun"])) > 0:
+                                vg = int(float(kb.iloc[0]["VarsayilanGun"]))
+                                yt = tarih_olustur(hy, secilen_ay, vg)
+                                kopya.append({"Tarih": pd.to_datetime(yt), "Kategori": r["Kategori"], "Tür": "Gider", "Tutar": r["Tutar"], "Son Ödeme Tarihi": son_odeme_hesapla(yt, vg), "Açıklama": f"{r['Açıklama']} (Kopya)", "Durum": False})
+                        if kopya: verileri_kaydet(conn, pd.concat([df, pd.DataFrame(kopya)], ignore_index=True)); st.success("Tamam"); time.sleep(1); st.rerun()
+                        else: st.warning("Sabit yok")
+                    else: st.error("Veri yok")
+            else: st.info("Kopyalama için yıl/ay seçin")
+
+        st.markdown("---")
+        # Kategori İşlemleri
         c1, c2 = st.columns(2)
         with c1:
             with st.form("ke"):
@@ -331,14 +374,3 @@ else:
                 if st.button("Sil", type="primary", use_container_width=True):
                     if sk in df["Kategori"].values: st.error("Dolu!")
                     else: kategorileri_kaydet(conn, df_kat[df_kat["Kategori"]!=sk]); st.success("Ok"); st.rerun()
-
-    # --- SIDEBAR (Piyasa & Çıkış) ---
-    with st.sidebar:
-        st.caption("Piyasa")
-        usd, eur, gram = piyasa_verileri_getir()
-        if usd > 0:
-            st.write(f"💵 {usd:.2f}")
-            st.write(f"💶 {eur:.2f}")
-            st.write(f"🥇 {gram:.0f}")
-        st.markdown("---")
-        if st.button("🚪 Çıkış", use_container_width=True): st.session_state.giris_yapildi = False; st.rerun()
