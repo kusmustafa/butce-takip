@@ -5,53 +5,51 @@ from datetime import datetime, date, timedelta
 import time
 import re
 
-# --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="Bütçe Makinesi v45", page_icon="🐦", layout="wide")
+# --- 1. AYARLAR ---
+st.set_page_config(page_title="Bütçe v46", page_icon="🐦", layout="wide")
 
-# --- 2. CSS DÜZELTMESİ (KESİKLİĞİ GİDEREN KOD) ---
+# --- 2. TEMİZ VE GÜVENLİ CSS (KALINTISIZ) ---
 st.markdown("""
 <style>
-    /* Üst boşluğu ÇOK ARTIRDIM (5rem). Artık başlık yukarı yapışmaz. */
+    /* ÜST BOŞLUK AYARI: Mobilde başlığın kesilmesini önleyen kritik ayar */
     .block-container {
-        padding-top: 5rem !important;
+        padding-top: 4rem !important; 
         padding-bottom: 3rem !important;
     }
     
-    /* Üstteki renkli şeridi ve menüyü gizle (Temiz görünüm) */
+    /* Sadece alt bilgiyi ve menü ikonunu gizle, header'ı çökertme */
     #MainMenu {visibility: hidden;} 
     footer {visibility: hidden;}
-    header {visibility: hidden;} 
     
-    /* Kart Tasarımı */
+    /* KART TASARIMI (Modern ve Okunaklı) */
     div.kpi-card {
         background-color: white;
-        border-radius: 12px;
-        padding: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border-radius: 10px;
+        padding: 12px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         text-align: center;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
         border: 1px solid #f0f0f0;
     }
     div.kpi-title {
-        color: #6c757d;
-        font-size: 0.8rem; 
+        color: #888;
+        font-size: 0.75rem; 
         font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-bottom: 5px;
+        margin-bottom: 4px;
     }
     div.kpi-value {
-        font-size: 1.6rem;
+        font-size: 1.4rem;
         font-weight: 800;
         margin-bottom: 0;
     }
     
-    /* Sidebar Rengi */
+    /* Yan menü rengi */
     [data-testid="stSidebar"] { background-color: #f8f9fa; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- RENK PALETİ ---
+# --- SABİTLER ---
 RENK_GELIR = "#28a745"
 RENK_GIDER = "#dc3545"
 RENK_NET = "#007bff"
@@ -59,7 +57,8 @@ RENK_ODENMEMIS = "#ffc107"
 KOLONLAR = ["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"]
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 
-# --- BAĞLANTI (LAZY LOAD) ---
+# --- BAĞLANTI & KÜTÜPHANELER (LAZY LOAD) ---
+# Bu fonksiyonlar çağrılmadıkça kütüphaneleri yüklemez, açılışı hızlandırır.
 def get_connection():
     from streamlit_gsheets import GSheetsConnection
     return st.connection("gsheets", type=GSheetsConnection)
@@ -76,9 +75,8 @@ def piyasa_verileri_getir():
         return dolar, euro, gram_altin
     except: return 0, 0, 0
 
-# --- FONKSİYONLAR ---
+# --- YARDIMCILAR ---
 def kpi_kart_ciz(baslik, deger, renk, ikon):
-    # CSS ile uyumlu HTML kartı
     st.markdown(f"""
     <div class="kpi-card" style="border-top: 4px solid {renk};">
         <div class="kpi-title">{baslik}</div>
@@ -146,13 +144,13 @@ def etiketleri_analiz_et(df):
     else: return pd.DataFrame()
 
 # ==========================================
-# --- UYGULAMA ---
+# --- UYGULAMA AKIŞI ---
 # ==========================================
 
 if "giris_yapildi" not in st.session_state: st.session_state.giris_yapildi = False
 if "genel" not in st.secrets: st.session_state.giris_yapildi = True
 
-# 1. GİRİŞ EKRANI
+# --- GİRİŞ EKRANI ---
 if not st.session_state.giris_yapildi:
     st.markdown("<br><br>", unsafe_allow_html=True)
     with st.container(border=True):
@@ -165,12 +163,13 @@ if not st.session_state.giris_yapildi:
                     st.rerun()
                 else: st.error("Hatalı Şifre!")
 
-# 2. ANA EKRAN
+# --- ANA UYGULAMA ---
 else:
     conn = get_connection()
     df = verileri_cek(conn)
     df_kat = kategorileri_cek(conn)
 
+    # Veri Tipi Düzeltme
     if not df.empty:
         df["Tarih"] = pd.to_datetime(df["Tarih"], errors='coerce')
         df = df.dropna(subset=["Tarih"])
@@ -180,22 +179,22 @@ else:
         if "Tutar" in df.columns: df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
         else: df["Tutar"] = 0.0
 
-    # Üst Bar (Başlık ve Yenileme)
-    c1, c2 = st.columns([0.85, 0.15])
+    # 1. BAŞLIK VE YENİLEME
+    c1, c2 = st.columns([0.80, 0.20], gap="small")
     with c1: st.markdown("### 🐦 Bütçe Makinesi")
     with c2: 
-        if st.button("🔄"): st.cache_data.clear(); st.rerun()
+        if st.button("🔄", help="Yenile", use_container_width=True):
+            st.cache_data.clear(); st.rerun()
 
-    # Filtreler (Üstte)
-    c_ara, c_yil, c_ay = st.columns([0.15, 0.35, 0.50])
+    # 2. ANA FİLTRELER (Mobilde En Üstte)
+    c_ara, c_yil, c_ay = st.columns([0.15, 0.35, 0.50], gap="small")
     with c_ara: 
-        st.write("") # Hizalama
         st.write("")
         arama_modu = st.checkbox("🔍")
     
     if arama_modu:
         with c_yil: st.write("")
-        with c_ay: kelime = st.text_input("Ara", label_visibility="collapsed")
+        with c_ay: kelime = st.text_input("Ara", label_visibility="collapsed", placeholder="Ara...")
         if kelime:
             df_filt = df[df.astype(str).apply(lambda x: x.str.contains(kelime, case=False)).any(axis=1)]
             secilen_yil = "Arama"; secilen_ay = "Arama"
@@ -217,7 +216,7 @@ else:
                 ay_no = AYLAR.index(secilen_ay) + 1
                 df_filt = df_filt[df_filt["Tarih"].dt.month == ay_no]
 
-    # Ek Araçlar (Kopyala/İndir)
+    # 3. ARAÇLAR (Kopyala/İndir)
     if not arama_modu and secilen_ay != "Tüm" and secilen_yil != "Tüm":
         with st.expander("🛠️ Kopyala / İndir"):
             ec1, ec2 = st.columns(2)
@@ -242,7 +241,7 @@ else:
 
     st.write("")
 
-    # KPI Kartları
+    # 4. KARTLAR
     if not df_filt.empty:
         gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
         gider = df_filt[df_filt["Tür"] == "Gider"]["Tutar"].sum()
@@ -259,11 +258,11 @@ else:
         r3, r4 = st.columns(2)
         with r3: kpi_kart_ciz("NET", f"{net:,.0f}", cr, ik)
         with r4: kpi_kart_ciz("ÖDENMEMİŞ", f"{bekleyen:,.0f}", RENK_ODENMEMIS, "⏳")
-    else: st.info("Veri yok.")
+    else: st.info("Kayıt yok.")
 
     st.write("")
     
-    # SEKMELER
+    # 5. SEKMELER
     t1, t2, t3, t4 = st.tabs(["📝 Ekle", "📊 Grafik", "📋 Liste", "📂 Ayar"])
 
     with t1:
@@ -277,7 +276,7 @@ else:
                     ks = st.selectbox("Kat.", kl, index=None, label_visibility="collapsed", placeholder="Seç...")
                 with c_t:
                     st.write("")
-                    tug = st.number_input("Tutar", step=50.0, label_visibility="collapsed")
+                    tug = st.number_input("Tutar", step=50.0, label_visibility="collapsed", placeholder="0.00 ₺")
                 ac = st.text_input("Not", placeholder="#etiket")
                 if st.button("KAYDET", type="primary", use_container_width=True):
                     if secilen_yil == "Tüm" or secilen_ay == "Tüm": st.error("Yıl/Ay Seç")
@@ -298,8 +297,6 @@ else:
             c_g1, c_g2 = st.columns(2)
             with c_g1: st.caption("Durum"); st.plotly_chart(px.pie(sg, values="Tutar", names="D", hole=0.5, color="D", color_discrete_map={"Ödendi":RENK_GELIR, "Bekliyor":RENK_GIDER}).update_layout(margin=dict(t=0,b=0,l=0,r=0), height=180, showlegend=False), use_container_width=True)
             with c_g2: st.caption("Kategori"); st.plotly_chart(px.pie(sg, values="Tutar", names="Kategori", hole=0.5).update_layout(margin=dict(t=0,b=0,l=0,r=0), height=180, showlegend=False), use_container_width=True)
-            
-            # Etiketler
             edf = etiketleri_analiz_et(sg)
             if not edf.empty: st.caption("Etiketler"); st.plotly_chart(px.bar(edf, x="Etiket", y="Tutar").update_layout(height=200, showlegend=False), use_container_width=True)
         else: st.info("Veri yok")
@@ -335,7 +332,7 @@ else:
                     if sk in df["Kategori"].values: st.error("Dolu!")
                     else: kategorileri_kaydet(conn, df_kat[df_kat["Kategori"]!=sk]); st.success("Ok"); st.rerun()
 
-    # Sidebar (Piyasa & Çıkış)
+    # --- SIDEBAR (Piyasa & Çıkış) ---
     with st.sidebar:
         st.caption("Piyasa")
         usd, eur, gram = piyasa_verileri_getir()
