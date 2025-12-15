@@ -6,9 +6,9 @@ import time
 import re
 
 # --- 1. AYARLAR ---
-st.set_page_config(page_title="Bütçe v51 (Stabil)", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Bütçe v52 (Final Fix)", page_icon="🐦", layout="wide")
 
-# --- 2. CSS ---
+# --- 2. TASARIM CSS (PREMIUM & RESPONSIVE) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
@@ -27,18 +27,20 @@ st.markdown("""
         }
     }
 
+    /* BUTONLAR */
     .top-btn-container button {
         border: none !important; background-color: white !important;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1) !important; color: #555 !important;
         font-weight: 600 !important; padding: 0.5rem 1rem !important;
-        border-radius: 8px !important; font-size: 1rem !important;
-        width: 100%;
+        border-radius: 8px !important; font-size: 1rem !important; width: 100%;
     }
     .logout-btn button { color: #dc3545 !important; }
 
+    /* HİZALAMA */
     div[data-testid="stHorizontalBlock"] > div { display: flex; align-items: center; }
     .stRadio > div, [data-testid="stNumberInput"] { margin-top: 0 !important; }
 
+    /* KARTLAR */
     .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }
     @media (max-width: 768px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
     .kpi-card {
@@ -48,6 +50,7 @@ st.markdown("""
     .kpi-title { color: #999; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; margin-bottom: 5px; }
     .kpi-value { font-size: 1.4rem; font-weight: 800; margin: 0; }
 
+    /* PİYASA */
     .market-box {
         display: inline-flex; gap: 15px; background: white; padding: 10px 20px;
         border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
@@ -55,6 +58,7 @@ st.markdown("""
     }
     @media (max-width: 768px) { .market-box { width: 100%; justify-content: center; font-size: 0.85rem; padding: 8px; } }
     
+    /* GİRİŞLER */
     .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
         border-radius: 10px !important; border: 1px solid #eee !important;
     }
@@ -66,7 +70,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- RENKLER & SABİTLER ---
+# --- SABİTLER ---
 RENK_GELIR = "#28a745"
 RENK_GIDER = "#dc3545"
 RENK_NET = "#007bff"
@@ -74,17 +78,13 @@ RENK_ODENMEMIS = "#ffc107"
 KOLONLAR = ["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"]
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 
-# --- YENİ: GÜVENLİ SAYI ÇEVİRİCİ (HATA ÖNLEYİCİ) ---
+# --- YARDIMCILAR ---
 def guvenli_int(deger):
-    """Gelen değer ne olursa olsun (boş, harf, nan) güvenli bir sayıya çevirir."""
     try:
-        if pd.isna(deger) or str(deger).strip() == "":
-            return 0
+        if pd.isna(deger) or str(deger).strip() == "": return 0
         return int(float(deger))
-    except:
-        return 0
+    except: return 0
 
-# --- BAĞLANTI ---
 def get_connection():
     from streamlit_gsheets import GSheetsConnection
     return st.connection("gsheets", type=GSheetsConnection)
@@ -101,7 +101,7 @@ def piyasa_verileri_getir():
         return dolar, euro, gram_altin
     except: return 0, 0, 0
 
-# --- FONKSİYONLAR ---
+# --- VERİ İŞLEMLERİ ---
 def verileri_cek(conn):
     try:
         df = conn.read(worksheet="Veriler", ttl=0)
@@ -122,14 +122,26 @@ def kategorileri_cek(conn):
     except: return varsayilan
 
 def verileri_kaydet(conn, df):
+    # --- DÜZELTİLMİŞ VE GÜVENLİ KAYIT FONKSİYONU ---
     try:
         save_df = df.copy()
-        save_df["Tarih"] = save_df["Tarih"].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) else '')
-        save_df["Son Ödeme Tarihi"] = save_df["Son Ödeme Tarihi"].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) else '')
+        
+        # 1. Tarihleri Önce Datetime'a Zorla, Sonra String Yap
+        # Bu yöntem, veri zaten string ise de, datetime ise de çalışır.
+        save_df["Tarih"] = pd.to_datetime(save_df["Tarih"], errors='coerce')
+        save_df["Tarih"] = save_df["Tarih"].dt.strftime('%Y-%m-%d').fillna("")
+        
+        save_df["Son Ödeme Tarihi"] = pd.to_datetime(save_df["Son Ödeme Tarihi"], errors='coerce')
+        save_df["Son Ödeme Tarihi"] = save_df["Son Ödeme Tarihi"].dt.strftime('%Y-%m-%d').fillna("")
+        
+        # 2. Tutar ve Diğerleri
         save_df["Tutar"] = pd.to_numeric(save_df["Tutar"], errors='coerce').fillna(0.0)
-        save_df = save_df.fillna("") 
+        save_df = save_df.fillna("")
+        
+        # 3. Kolon Eşitleme
         for col in KOLONLAR:
             if col not in save_df.columns: save_df[col] = ""
+            
         conn.update(worksheet="Veriler", data=save_df[KOLONLAR])
     except Exception as e:
         st.error(f"Kayıt Hatası: {e}")
@@ -144,14 +156,14 @@ def tarih_olustur(yil, ay_ismi, gun):
         ay_index = datetime.now().month
         yil = datetime.now().year
     
-    h_gun = guvenli_int(gun) # HATA BURADAYDI, DÜZELTİLDİ
+    h_gun = guvenli_int(gun)
     if h_gun <= 0: h_gun = 1
     
     try: return date(yil, ay_index, h_gun)
     except ValueError: return date(yil, ay_index, 28)
 
 def son_odeme_hesapla(islem_tarihi, varsayilan_gun):
-    v_gun = guvenli_int(varsayilan_gun) # HATA BURADAYDI, DÜZELTİLDİ
+    v_gun = guvenli_int(varsayilan_gun)
     if v_gun == 0: return islem_tarihi
     try:
         return tarih_olustur(islem_tarihi.year, AYLAR[islem_tarihi.month-1], v_gun)
@@ -171,7 +183,7 @@ def etiketleri_analiz_et(df):
     else: return pd.DataFrame()
 
 # ==========================================
-# --- UYGULAMA ---
+# --- UYGULAMA AKIŞI ---
 # ==========================================
 
 if "giris_yapildi" not in st.session_state: st.session_state.giris_yapildi = False
@@ -282,7 +294,6 @@ else:
                             for _, r in kdf.iterrows():
                                 kb = df_kat[df_kat["Kategori"] == r["Kategori"]]
                                 if not kb.empty:
-                                    # HATA BURADA ÇÖZÜLDÜ: guvenli_int kullanıyoruz
                                     vg = guvenli_int(kb.iloc[0]["VarsayilanGun"])
                                     yt = tarih_olustur(hy, secilen_ay, vg)
                                     yso = son_odeme_hesapla(yt, vg)
@@ -349,60 +360,4 @@ else:
                     kl = df_kat[df_kat["Tur"]==ts]["Kategori"].tolist() if not df_kat.empty else []
                     ks = st.selectbox("Kat.", kl, index=None, label_visibility="collapsed", placeholder="Kategori Seç...")
                 with c_tut:
-                    tug = st.number_input("Tutar", step=50.0, label_visibility="collapsed", placeholder="0.00 ₺")
-                ac = st.text_input("Not", placeholder="#etiket (Opsiyonel)")
-                
-                if st.button("KAYDET", type="primary", use_container_width=True):
-                    if secilen_yil == "Tüm" or secilen_ay == "Tüm": st.error("Lütfen bir Yıl ve Ay seçin.")
-                    elif ks and tug > 0:
-                        # HATA BURADA ÇÖZÜLDÜ: guvenli_int
-                        vg = 0
-                        if not df_kat.empty:
-                            r = df_kat[df_kat["Kategori"]==ks]
-                            if not r.empty: vg = guvenli_int(r.iloc[0]["VarsayilanGun"])
-                        kt = tarih_olustur(secilen_yil, secilen_ay, vg)
-                        yeni = pd.DataFrame([{"Tarih": pd.to_datetime(kt), "Kategori": ks, "Tür": ts, "Tutar": float(tug), "Son Ödeme Tarihi": son_odeme_hesapla(kt, vg), "Açıklama": ac, "Durum": False}])
-                        verileri_kaydet(conn, pd.concat([df, yeni], ignore_index=True)); st.success("Kaydedildi!"); time.sleep(0.5); st.rerun()
-                    else: st.warning("Tutar ve Kategori zorunludur.")
-
-    with t2:
-        if not df_filt.empty and "Gider" in df_filt["Tür"].values:
-            sg = df_filt[df_filt["Tür"]=="Gider"].copy()
-            sg["D"] = sg["Durum"].map({True:"Ödendi", False:"Bekliyor"})
-            c_g1, c_g2 = st.columns(2)
-            with c_g1: st.caption("Durum"); st.plotly_chart(px.pie(sg, values="Tutar", names="D", hole=0.5, color="D", color_discrete_map={"Ödendi":RENK_GELIR, "Bekliyor":RENK_GIDER}).update_layout(margin=dict(t=0,b=0,l=0,r=0), height=180, showlegend=False), use_container_width=True)
-            with c_g2: st.caption("Kategori"); st.plotly_chart(px.pie(sg, values="Tutar", names="Kategori", hole=0.5).update_layout(margin=dict(t=0,b=0,l=0,r=0), height=180, showlegend=False), use_container_width=True)
-            edf = etiketleri_analiz_et(sg)
-            if not edf.empty: st.caption("Etiketler"); st.plotly_chart(px.bar(edf, x="Etiket", y="Tutar").update_layout(height=200, showlegend=False), use_container_width=True)
-        else: st.info("Gider verisi yok.")
-
-    with t3:
-        if not df_filt.empty:
-            edt = df_filt.sort_values("Tarih", ascending=False).copy()
-            edt["Tarih"] = edt["Tarih"].dt.date
-            if "Son Ödeme Tarihi" in edt.columns: edt["Son Ödeme Tarihi"] = pd.to_datetime(edt["Son Ödeme Tarihi"], errors='coerce').dt.date
-            if arama_modu: st.dataframe(edt, hide_index=True, use_container_width=True)
-            else:
-                duz = st.data_editor(edt, column_config={"Durum": st.column_config.CheckboxColumn(default=False), "Tutar": st.column_config.NumberColumn(format="%.0f"), "Kategori": st.column_config.SelectboxColumn(options=df_kat["Kategori"].unique().tolist()), "Tür": st.column_config.SelectboxColumn(options=["Gider", "Gelir"])}, hide_index=True, use_container_width=True, num_rows="dynamic")
-                if st.button("💾 Tabloyu Kaydet", use_container_width=True):
-                    dfr = df.drop(df_filt.index); duz["Tarih"] = pd.to_datetime(duz["Tarih"])
-                    verileri_kaydet(conn, pd.concat([dfr, duz], ignore_index=True)); st.success("Güncellendi."); st.rerun()
-        else: st.write("Kayıt yok.")
-
-    with t4:
-        c1, c2 = st.columns(2)
-        with c1:
-            with st.form("ke"):
-                kt = st.radio("T", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
-                ka = st.text_input("Ad", label_visibility="collapsed", placeholder="Yeni Kategori")
-                kg = st.number_input("Gün", 0, 31, 0, label_visibility="collapsed")
-                if st.form_submit_button("Ekle"):
-                    gk = conn.read(worksheet="Kategoriler", ttl=0) if not df_kat.empty else df_kat
-                    if ka and ka not in gk["Kategori"].values:
-                        kategorileri_kaydet(conn, pd.concat([gk, pd.DataFrame([{"Kategori": ka, "Tur": kt, "VarsayilanGun": kg}])], ignore_index=True)); st.success("Eklendi."); st.rerun()
-        with c2:
-            if not df_kat.empty:
-                sk = st.selectbox("Sil", df_kat["Kategori"].tolist(), label_visibility="collapsed")
-                if st.button("Sil", type="primary", use_container_width=True):
-                    if sk in df["Kategori"].values: st.error("Kullanımda!")
-                    else: kategorileri_kaydet(conn, df_kat[df_kat["Kategori"]!=sk]); st.success("Silindi."); st.rerun()
+                    tug = st.number_input("Tutar", step=50.0, label_visibility="collapsed", placeholder="0
