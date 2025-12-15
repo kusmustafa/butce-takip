@@ -6,9 +6,9 @@ import time
 import re
 
 # --- 1. AYARLAR ---
-st.set_page_config(page_title="Bütçe v54", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Bütçe v55 (Final Form)", page_icon="🐦", layout="wide")
 
-# --- 2. CSS ---
+# --- 2. TASARIM CSS ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
@@ -27,6 +27,7 @@ st.markdown("""
         }
     }
 
+    /* BUTONLAR */
     .top-btn-container button {
         border: none !important; background-color: white !important;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1) !important; color: #555 !important;
@@ -35,9 +36,11 @@ st.markdown("""
     }
     .logout-btn button { color: #dc3545 !important; }
 
+    /* FORM HİZALAMA */
     div[data-testid="stHorizontalBlock"] > div { display: flex; align-items: center; }
     .stRadio > div, [data-testid="stNumberInput"] { margin-top: 0 !important; }
 
+    /* KARTLAR */
     .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }
     @media (max-width: 768px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
     .kpi-card {
@@ -47,6 +50,7 @@ st.markdown("""
     .kpi-title { color: #999; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; margin-bottom: 5px; }
     .kpi-value { font-size: 1.4rem; font-weight: 800; margin: 0; }
 
+    /* PİYASA */
     .market-box {
         display: inline-flex; gap: 15px; background: white; padding: 10px 20px;
         border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
@@ -54,13 +58,17 @@ st.markdown("""
     }
     @media (max-width: 768px) { .market-box { width: 100%; justify-content: center; font-size: 0.85rem; padding: 8px; } }
     
+    /* GİRİŞLER */
     .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
         border-radius: 10px !important; border: 1px solid #eee !important;
     }
-    .stButton > button[kind="primary"] {
+    
+    /* FORM BUTONU (KAYDET) */
+    div[data-testid="stFormSubmitButton"] > button {
         background: linear-gradient(135deg, #ff4b4b, #ff6b6b) !important;
         border: none !important; box-shadow: 0 4px 10px rgba(255, 75, 75, 0.3) !important;
         font-weight: 700 !important; padding: 0.75rem !important; color: white !important;
+        width: 100% !important; /* Tam genişlik */
     }
 </style>
 """, unsafe_allow_html=True)
@@ -96,25 +104,14 @@ def piyasa_verileri_getir():
         return dolar, euro, gram_altin
     except: return 0, 0, 0
 
-# --- VERİ İŞLEMLERİ (DÜZELTİLDİ) ---
+# --- VERİ İŞLEMLERİ ---
 def verileri_cek(conn):
     try:
         df = conn.read(worksheet="Veriler", ttl=0)
         if df.empty or "Tarih" not in df.columns: return pd.DataFrame(columns=KOLONLAR)
-        
-        # Boş satırları temizle
         df = df.dropna(how="all")
-        
-        # Eksik kolonları tamamla
         for col in KOLONLAR:
             if col not in df.columns: df[col] = pd.NA
-            
-        # --- KRİTİK DÜZELTME: BURADA ZORLA DATETIME YAP ---
-        df["Tarih"] = pd.to_datetime(df["Tarih"], errors='coerce')
-        df["Son Ödeme Tarihi"] = pd.to_datetime(df["Son Ödeme Tarihi"], errors='coerce')
-        
-        # NaT (Bozuk tarih) olan satırları (eğer tarih çok önemliyse) filtrele veya tut
-        # Şimdilik tutuyoruz ama yıl filtresinde hata vermemesi için aşağıda kontrol edeceğiz
         return df
     except: return pd.DataFrame(columns=KOLONLAR)
 
@@ -130,7 +127,7 @@ def kategorileri_cek(conn):
 def verileri_kaydet(conn, df):
     try:
         save_df = df.copy()
-        # Kaydederken String formatına çevir (GSheets için)
+        # Tarih formatlama
         save_df["Tarih"] = pd.to_datetime(save_df["Tarih"], errors='coerce')
         save_df["Tarih"] = save_df["Tarih"].dt.strftime('%Y-%m-%d').fillna("")
         
@@ -208,12 +205,9 @@ else:
     df = verileri_cek(conn)
     df_kat = kategorileri_cek(conn)
 
-    # Veri Tipi Düzeltme (Tekrar Garanti Altına Al)
     if not df.empty:
-        # Tarihlerin datetime olduğundan ve NaT (Hatalı tarih) olmadığından emin ol
         df["Tarih"] = pd.to_datetime(df["Tarih"], errors='coerce')
-        df = df.dropna(subset=["Tarih"]) # Tarihi bozuk olanları ekrandan gizle (Hata vermesin)
-        
+        df = df.dropna(subset=["Tarih"])
         if "Durum" in df.columns:
             df["Durum"] = df["Durum"].astype(str).str.lower().map({'true': True, 'false': False, '1.0': True, '0.0': False, '1': True, '0': False, 'nan': False}).fillna(False)
         else: df["Durum"] = False
@@ -263,12 +257,9 @@ else:
         else: df_filt = df; secilen_yil = "Arama"; secilen_ay = "Arama"
     else:
         kelime = None
-        # Yıl Listesi (Integer olduğundan emin olalım)
         try:
-            # Sadece geçerli yılları al
             yil_list = sorted(df["Tarih"].dt.year.dropna().astype(int).unique(), reverse=True)
-        except:
-            yil_list = []
+        except: yil_list = []
             
         current_year = datetime.now().year
         if current_year not in yil_list: yil_list.insert(0, current_year)
@@ -280,7 +271,6 @@ else:
         
         if secilen_yil == "Tüm": df_filt = df
         else:
-            # AttributeError HATASI BURADA ÇÖZÜLDÜ (Tarih formatı garanti)
             df_filt = df[df["Tarih"].dt.year == secilen_yil]
             if secilen_ay != "Tüm":
                 ay_no = AYLAR.index(secilen_ay) + 1
@@ -363,23 +353,27 @@ else:
     with t1:
         if arama_modu: st.warning("Aramayı kapatın")
         else:
-            with st.container(border=True):
+            # --- FORM YAPISI (OTOMATİK TEMİZLİK İÇİN) ---
+            # clear_on_submit=True sayesinde KAYDET'e basınca form sıfırlanır.
+            with st.form("giris_formu_main", clear_on_submit=True):
+                
                 c_tur, c_kat, c_tut = st.columns([1, 1.5, 1])
                 with c_tur:
                     ts = st.radio("Tür", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
                 with c_kat:
                     kl = df_kat[df_kat["Tur"]==ts]["Kategori"].tolist() if not df_kat.empty else []
-                    # SIFIRLAMA İÇİN KEY EKLENDİ
-                    ks = st.selectbox("Kat.", kl, index=None, label_visibility="collapsed", placeholder="Seçiniz...", key="sb_kategori")
+                    ks = st.selectbox("Kat.", kl, index=None, label_visibility="collapsed", placeholder="Kategori Seç...")
                 with c_tut:
-                    # SIFIRLAMA İÇİN KEY EKLENDİ
-                    tug = st.number_input("Tutar", min_value=0.0, step=50.0, value=0.0, label_visibility="collapsed", key="ni_tutar")
+                    tug = st.number_input("Tutar", min_value=0.0, step=50.0, label_visibility="collapsed")
                 
-                # SIFIRLAMA İÇİN KEY EKLENDİ
-                ac = st.text_input("Not", placeholder="#etiket (Opsiyonel)", key="ti_aciklama")
+                ac = st.text_input("Not", placeholder="#etiket (Opsiyonel)")
                 
-                if st.button("KAYDET", type="primary", use_container_width=True):
-                    if secilen_yil == "Tüm" or secilen_ay == "Tüm": st.error("Lütfen bir Yıl ve Ay seçin.")
+                # Form Gönderme Butonu
+                submitted = st.form_submit_button("KAYDET")
+                
+                if submitted:
+                    if secilen_yil == "Tüm" or secilen_ay == "Tüm": 
+                        st.error("Lütfen bir Yıl ve Ay seçin.")
                     elif ks and tug > 0:
                         vg = 0
                         if not df_kat.empty:
@@ -388,14 +382,7 @@ else:
                         kt = tarih_olustur(secilen_yil, secilen_ay, vg)
                         yeni = pd.DataFrame([{"Tarih": pd.to_datetime(kt), "Kategori": ks, "Tür": ts, "Tutar": float(tug), "Son Ödeme Tarihi": son_odeme_hesapla(kt, vg), "Açıklama": ac, "Durum": False}])
                         verileri_kaydet(conn, pd.concat([df, yeni], ignore_index=True))
-                        
-                        # --- SIFIRLAMA MANTIĞI ---
-                        st.session_state["sb_kategori"] = None
-                        st.session_state["ni_tutar"] = 0.0
-                        st.session_state["ti_aciklama"] = ""
-                        # -------------------------
-                        
-                        st.success("Kaydedildi!"); time.sleep(0.5); st.rerun()
+                        st.toast("✅ Kaydedildi!"); time.sleep(0.5); st.rerun()
                     else: st.warning("Tutar ve Kategori zorunludur.")
 
     with t2:
