@@ -6,26 +6,19 @@ import time
 import re
 
 # --- 1. AYARLAR ---
-st.set_page_config(page_title="Bütçe v49 (Premium)", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Bütçe v50 (Final)", page_icon="🐦", layout="wide")
 
 # --- 2. PREMIUM TASARIM CSS ---
 st.markdown("""
 <style>
-    /* FONT YÜKLEME (Inter) */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
-
-    /* GENEL STİL */
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
-
-    /* GİZLEME */
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    
     [data-testid="stSidebar"], #MainMenu, footer, header {display: none;}
 
-    /* RESPONSIVE BOŞLUKLAR */
     .block-container {
-        padding-top: 2rem !important; padding-bottom: 2rem !important;
-        padding-left: 5rem !important; padding-right: 5rem !important;
+        padding-top: 2rem !important; padding-bottom: 3rem !important;
+        padding-left: 3rem !important; padding-right: 3rem !important;
     }
     @media (max-width: 768px) {
         .block-container {
@@ -34,91 +27,55 @@ st.markdown("""
         }
     }
 
-    /* --- ÖZEL BUTONLAR (SAĞ ÜST) --- */
-    /* Standart butonları eziyoruz */
+    /* ÜST BUTONLAR */
     .top-btn-container button {
-        border: none !important;
-        background-color: white !important;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1) !important;
-        color: #555 !important;
-        font-weight: 600 !important;
-        padding: 0.5rem 1rem !important;
-        border-radius: 8px !important;
-        font-size: 1rem !important; /* Daha büyük */
-        transition: all 0.2s ease-in-out !important;
+        border: none !important; background-color: white !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1) !important; color: #555 !important;
+        font-weight: 600 !important; padding: 0.5rem 1rem !important;
+        border-radius: 8px !important; font-size: 1rem !important;
+        transition: all 0.2s ease-in-out !important; width: 100%;
     }
     .top-btn-container button:hover {
-        box-shadow: 0 4px 8px rgba(0,0,0,0.15) !important;
-        transform: translateY(-2px) !important;
-        color: #333 !important;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15) !important; transform: translateY(-2px) !important; color: #333 !important;
     }
-    /* Çıkış Butonuna Özel Stil (İstediğin İkon ve Vurgu) */
-    .logout-btn button {
-        color: #dc3545 !important; /* Kırmızımsı */
-    }
-    .logout-btn button:hover {
-        background-color: #fff5f5 !important;
-    }
+    .logout-btn button { color: #dc3545 !important; }
+    .logout-btn button:hover { background-color: #fff5f5 !important; }
 
-    /* --- FORM HİZALAMA (MÜKEMMEL UYUM) --- */
-    /* Ekle sekmesindeki form elemanlarını dikeyde ortala */
-    div[data-testid="stHorizontalBlock"] > div {
-        display: flex;
-        align-items: center; /* Dikey ortalama */
-    }
-    /* Radio butonların üzerindeki gereksiz boşluğu al */
-    .stRadio > div {
-        margin-top: 0 !important;
-    }
-    /* Number input'un etrafındaki boşluğu düzenle */
-    [data-testid="stNumberInput"] {
-        margin-top: 0 !important;
-    }
+    /* FORM HİZALAMA */
+    div[data-testid="stHorizontalBlock"] > div { display: flex; align-items: center; }
+    .stRadio > div, [data-testid="stNumberInput"] { margin-top: 0 !important; }
 
-    /* --- KART TASARIMI (PREMIUM) --- */
-    .kpi-grid {
-        display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px;
-    }
+    /* KART TASARIMI */
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }
     @media (max-width: 768px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
     .kpi-card {
-        background: white; border-radius: 16px; padding: 20px; text-align: center;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);
-        transition: transform 0.2s, box-shadow 0.2s;
+        background: white; border-radius: 16px; padding: 15px; text-align: center;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.05);
     }
-    .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 6px 15px rgba(0,0,0,0.12); }
-    .kpi-title { color: #999; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px; }
-    .kpi-value { font-size: 1.5rem; font-weight: 800; margin: 0; }
+    .kpi-title { color: #999; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; margin-bottom: 5px; }
+    .kpi-value { font-size: 1.4rem; font-weight: 800; margin: 0; }
 
-    /* --- PİYASA KUTUSU --- */
+    /* PİYASA KUTUSU */
     .market-box {
         display: inline-flex; gap: 15px; background: white; padding: 10px 20px;
-        border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         font-size: 0.95rem; font-weight: 700; color: #444; border: 1px solid #eee;
     }
-    @media (max-width: 768px) { .market-box { width: 100%; justify-content: center; padding: 8px; gap: 10px; font-size: 0.85rem; } }
-
-    /* --- SEKMELER VE GENEL --- */
-    .stTabs [data-baseweb="tab"] {
-        font-weight: 600; font-size: 1rem; color: #666;
-    }
-    .stTabs [aria-selected="true"] {
-        color: #007bff !important;
-    }
-    /* Giriş alanlarını güzelleştir */
+    @media (max-width: 768px) { .market-box { width: 100%; justify-content: center; font-size: 0.85rem; padding: 8px; } }
+    
+    /* GİRİŞ ALANLARI */
     .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
-        border-radius: 10px !important; border: 1px solid #eee !important; padding: 0.5rem 1rem !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
+        border-radius: 10px !important; border: 1px solid #eee !important;
     }
-    /* Ana Buton (KAYDET) */
     .stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #ff4b4b, #ff6b6b) !important;
         border: none !important; box-shadow: 0 4px 10px rgba(255, 75, 75, 0.3) !important;
-        font-weight: 700 !important; padding: 0.75rem !important; font-size: 1.1rem !important;
+        font-weight: 700 !important; padding: 0.75rem !important; color: white !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- RENKLER ---
+# --- RENKLER & SABİTLER ---
 RENK_GELIR = "#28a745"
 RENK_GIDER = "#dc3545"
 RENK_NET = "#007bff"
@@ -164,22 +121,42 @@ def kategorileri_cek(conn):
     except: return varsayilan
 
 def verileri_kaydet(conn, df):
-    save_df = df.copy()
-    save_df["Tarih"] = save_df["Tarih"].astype(str).replace('NaT', '')
-    save_df["Son Ödeme Tarihi"] = save_df["Son Ödeme Tarihi"].astype(str).replace('NaT', '')
-    save_df = save_df.fillna("") 
-    for col in KOLONLAR:
-        if col not in save_df.columns: save_df[col] = ""
-    conn.update(worksheet="Veriler", data=save_df[KOLONLAR])
+    # HATA ÖNLEYİCİ KAYIT FONKSİYONU
+    try:
+        save_df = df.copy()
+        # 1. Tarihleri String'e çevir (ValueError Önleyici)
+        # pd.to_datetime ile oluşan NaT değerlerini boş string yapar
+        save_df["Tarih"] = save_df["Tarih"].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) else '')
+        save_df["Son Ödeme Tarihi"] = save_df["Son Ödeme Tarihi"].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) else '')
+        
+        # 2. Sayısal Değerleri Garantiye Al
+        save_df["Tutar"] = pd.to_numeric(save_df["Tutar"], errors='coerce').fillna(0.0)
+        
+        # 3. Boş değerleri temizle
+        save_df = save_df.fillna("") 
+        
+        # 4. Sadece gerekli kolonları gönder
+        for col in KOLONLAR:
+            if col not in save_df.columns: save_df[col] = ""
+            
+        conn.update(worksheet="Veriler", data=save_df[KOLONLAR])
+    except Exception as e:
+        st.error(f"Kayıt sırasında hata oluştu: {e}")
 
 def kategorileri_kaydet(conn, df): conn.update(worksheet="Kategoriler", data=df)
 
 def tarih_olustur(yil, ay_ismi, gun):
-    try: ay_index = AYLAR.index(ay_ismi) + 1
-    except: ay_index = datetime.now().month
-    try: h_gun = int(float(gun)); 
+    try: 
+        ay_index = AYLAR.index(ay_ismi) + 1
+        yil = int(yil) # Yılın sayı olduğundan emin ol
+    except: 
+        ay_index = datetime.now().month
+        yil = datetime.now().year
+    
+    try: h_gun = int(float(gun))
     except: h_gun = 1
     if h_gun <= 0: h_gun = 1
+    
     try: return date(yil, ay_index, h_gun)
     except ValueError: return date(yil, ay_index, 28)
 
@@ -214,7 +191,7 @@ if "genel" not in st.secrets: st.session_state.giris_yapildi = True
 if not st.session_state.giris_yapildi:
     st.markdown("<br><br>", unsafe_allow_html=True)
     with st.container(border=True):
-        st.markdown("<h2 style='text-align: center; color: #333; font-weight: 800;'>🐦 Giriş</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: #333;'>🐦 Giriş</h2>", unsafe_allow_html=True)
         with st.form("giris_formu"):
             sifre = st.text_input("Şifre", type="password")
             if st.form_submit_button("Giriş Yap", type="primary", use_container_width=True):
@@ -239,38 +216,34 @@ else:
         if "Tutar" in df.columns: df["Tutar"] = pd.to_numeric(df["Tutar"], errors='coerce').fillna(0.0)
         else: df["Tutar"] = 0.0
 
-    # 1. ÜST BAR (Piyasa + Özel Butonlar)
-    col_top_left, col_top_right = st.columns([0.65, 0.35])
-    
+    # 1. ÜST BAR
+    c_top_l, c_top_r = st.columns([0.65, 0.35])
     usd, eur, gram = piyasa_verileri_getir()
     
-    with col_top_left:
+    with c_top_l:
         if usd > 0:
             st.markdown(f"""
             <div class="market-box">
                 <span>💵 {usd:.2f}</span>
                 <span>💶 {eur:.2f}</span>
                 <span>🥇 {gram:.0f}</span>
-            </div>
-            """, unsafe_allow_html=True)
+            </div>""", unsafe_allow_html=True)
         else: st.caption("Yükleniyor...")
 
-    with col_top_right:
-        # Butonları özel CSS sınıfları olan container'lara koyuyoruz
+    with c_top_r:
         b1, b2 = st.columns(2)
         with b1: 
             st.markdown('<div class="top-btn-container">', unsafe_allow_html=True)
             if st.button("🔄 Yenile", use_container_width=True): st.cache_data.clear(); st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
         with b2: 
-            # İstenen ikona (⎋) sahip, özel stilli çıkış butonu
             st.markdown('<div class="top-btn-container logout-btn">', unsafe_allow_html=True)
             if st.button("⎋ Çıkış", use_container_width=True): st.session_state.giris_yapildi = False; st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # 2. BAŞLIK VE FİLTRELER
+    # 2. FİLTRELER
     c_ara, c_yil, c_ay = st.columns([0.15, 0.35, 0.50], gap="small")
     with c_ara: 
         st.write("")
@@ -285,12 +258,14 @@ else:
         else: df_filt = df; secilen_yil = "Arama"; secilen_ay = "Arama"
     else:
         kelime = None
+        # Yıl Listesi (Integer olduğundan emin olalım)
         yil_list = sorted(df["Tarih"].dt.year.unique(), reverse=True) if not df.empty else []
-        if datetime.now().year not in yil_list: yil_list.insert(0, datetime.now().year)
+        current_year = datetime.now().year
+        if current_year not in yil_list: yil_list.insert(0, current_year)
         
         with c_yil: secilen_yil = st.selectbox("Yıl", ["Tüm"] + list(yil_list), label_visibility="collapsed")
         with c_ay: 
-            idx = datetime.now().month if secilen_yil == datetime.now().year else 0
+            idx = datetime.now().month if secilen_yil == current_year else 0
             secilen_ay = st.selectbox("Ay", ["Tüm"] + AYLAR, index=idx, label_visibility="collapsed")
         
         if secilen_yil == "Tüm": df_filt = df
@@ -300,32 +275,65 @@ else:
                 ay_no = AYLAR.index(secilen_ay) + 1
                 df_filt = df_filt[df_filt["Tarih"].dt.month == ay_no]
 
-    # Ek Araçlar
+    # 3. KOPYALAMA ARAÇLARI (DÜZELTİLDİ)
     if not arama_modu and secilen_ay != "Tüm" and secilen_yil != "Tüm":
         with st.expander("🛠️ Kopyala / İndir"):
             ec1, ec2 = st.columns(2)
-            with ec1: st.download_button("📥 Excel", csv_indir(df), "yedek.csv", "text/csv", use_container_width=True)
+            with ec1: st.download_button("📥 Excel İndir", csv_indir(df), "yedek.csv", "text/csv", use_container_width=True)
             with ec2:
-                if st.button("⏮️ Kopyala", use_container_width=True):
-                    hy = secilen_yil; ha = AYLAR.index(secilen_ay) + 1
-                    if ha == 1: ka = 12; ky = hy - 1
-                    else: ka = ha - 1; ky = hy
-                    kdf = df[(df["Tarih"].dt.year == ky) & (df["Tarih"].dt.month == ka) & (df["Tür"] == "Gider")]
-                    if not kdf.empty:
-                        kopya = []
-                        for _, r in kdf.iterrows():
-                            kb = df_kat[df_kat["Kategori"] == r["Kategori"]]
-                            if not kb.empty and int(float(kb.iloc[0]["VarsayilanGun"])) > 0:
-                                vg = int(float(kb.iloc[0]["VarsayilanGun"]))
-                                yt = tarih_olustur(hy, secilen_ay, vg)
-                                kopya.append({"Tarih": pd.to_datetime(yt), "Kategori": r["Kategori"], "Tür": "Gider", "Tutar": r["Tutar"], "Son Ödeme Tarihi": son_odeme_hesapla(yt, vg), "Açıklama": f"{r['Açıklama']} (Kopya)", "Durum": False})
-                        if kopya: verileri_kaydet(conn, pd.concat([df, pd.DataFrame(kopya)], ignore_index=True)); st.success("Tamam"); time.sleep(1); st.rerun()
-                        else: st.warning("Sabit yok")
-                    else: st.error("Veri yok")
+                if st.button("⏮️ Geçen Ayı Kopyala", use_container_width=True):
+                    try:
+                        # Seçilen Yıl ve Ay'ı Sayıya Çevir
+                        hy = int(secilen_yil)
+                        ha = AYLAR.index(secilen_ay) + 1
+                        
+                        # Geçen Ayı Hesapla
+                        if ha == 1: 
+                            ka = 12
+                            ky = hy - 1
+                        else: 
+                            ka = ha - 1
+                            ky = hy
+                        
+                        # Geçen ayın verilerini çek
+                        kdf = df[(df["Tarih"].dt.year == ky) & (df["Tarih"].dt.month == ka) & (df["Tür"] == "Gider")]
+                        
+                        if not kdf.empty:
+                            kopya = []
+                            for _, r in kdf.iterrows():
+                                # Kategoriye ait varsayılan günü bul
+                                kb = df_kat[df_kat["Kategori"] == r["Kategori"]]
+                                if not kb.empty:
+                                    try:
+                                        vg = int(float(kb.iloc[0]["VarsayilanGun"]))
+                                    except: vg = 1
+                                    
+                                    # Yeni tarihi oluştur (Seçili Yıl ve Ay ile)
+                                    yt = tarih_olustur(hy, secilen_ay, vg)
+                                    yso = son_odeme_hesapla(yt, vg)
+                                    
+                                    kopya.append({
+                                        "Tarih": pd.to_datetime(yt),
+                                        "Kategori": r["Kategori"],
+                                        "Tür": "Gider",
+                                        "Tutar": float(r["Tutar"]),
+                                        "Son Ödeme Tarihi": yso,
+                                        "Açıklama": f"{r['Açıklama']} (Kopya)",
+                                        "Durum": False
+                                    })
+                            
+                            if kopya:
+                                yeni_df = pd.concat([df, pd.DataFrame(kopya)], ignore_index=True)
+                                verileri_kaydet(conn, yeni_df)
+                                st.success(f"{len(kopya)} Kayıt Kopyalandı!"); time.sleep(1); st.rerun()
+                            else: st.warning("Sabit gider bulunamadı.")
+                        else: st.error("Geçen ayda veri yok.")
+                    except Exception as e:
+                        st.error(f"Hata: {e}")
 
     st.write("")
 
-    # 3. KARTLAR (PREMIUM GRID)
+    # 4. KARTLAR
     if not df_filt.empty:
         gelir = df_filt[df_filt["Tür"] == "Gelir"]["Tutar"].sum()
         gider = df_filt[df_filt["Tür"] == "Gider"]["Tutar"].sum()
@@ -354,20 +362,18 @@ else:
                 <div class="kpi-title">ÖDENMEMİŞ</div>
                 <div class="kpi-value" style="color:{RENK_ODENMEMIS}">⏳ {bekleyen:,.0f}</div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
     else: st.info("Kayıt yok.")
 
     st.write("")
     
-    # 4. SEKMELER
+    # 5. SEKMELER
     t1, t2, t3, t4 = st.tabs(["📝 Ekle", "📊 Grafik", "📋 Liste", "📂 Ayar"])
 
     with t1:
         if arama_modu: st.warning("Aramayı kapatın")
         else:
             with st.container(border=True):
-                # HİZALANMIŞ FORM ALANI (CSS ile destekleniyor)
                 c_tur, c_kat, c_tut = st.columns([1, 1.5, 1])
                 with c_tur:
                     ts = st.radio("Tür", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
@@ -376,7 +382,6 @@ else:
                     ks = st.selectbox("Kat.", kl, index=None, label_visibility="collapsed", placeholder="Kategori Seç...")
                 with c_tut:
                     tug = st.number_input("Tutar", step=50.0, label_visibility="collapsed", placeholder="0.00 ₺")
-                
                 ac = st.text_input("Not", placeholder="#etiket (Opsiyonel)")
                 
                 if st.button("KAYDET", type="primary", use_container_width=True):
@@ -400,7 +405,7 @@ else:
             with c_g2: st.caption("Kategori"); st.plotly_chart(px.pie(sg, values="Tutar", names="Kategori", hole=0.5).update_layout(margin=dict(t=0,b=0,l=0,r=0), height=180, showlegend=False), use_container_width=True)
             edf = etiketleri_analiz_et(sg)
             if not edf.empty: st.caption("Etiketler"); st.plotly_chart(px.bar(edf, x="Etiket", y="Tutar").update_layout(height=200, showlegend=False), use_container_width=True)
-        else: st.info("Gider verisi yok.")
+        else: st.info("Veri yok")
 
     with t3:
         if not df_filt.empty:
@@ -410,10 +415,10 @@ else:
             if arama_modu: st.dataframe(edt, hide_index=True, use_container_width=True)
             else:
                 duz = st.data_editor(edt, column_config={"Durum": st.column_config.CheckboxColumn(default=False), "Tutar": st.column_config.NumberColumn(format="%.0f"), "Kategori": st.column_config.SelectboxColumn(options=df_kat["Kategori"].unique().tolist()), "Tür": st.column_config.SelectboxColumn(options=["Gider", "Gelir"])}, hide_index=True, use_container_width=True, num_rows="dynamic")
-                if st.button("💾 Tabloyu Kaydet", use_container_width=True):
+                if st.button("💾 Kaydet", use_container_width=True):
                     dfr = df.drop(df_filt.index); duz["Tarih"] = pd.to_datetime(duz["Tarih"])
                     verileri_kaydet(conn, pd.concat([dfr, duz], ignore_index=True)); st.success("Güncellendi."); st.rerun()
-        else: st.write("Kayıt yok.")
+        else: st.write("Boş")
 
     with t4:
         c1, c2 = st.columns(2)
