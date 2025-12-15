@@ -6,9 +6,9 @@ import time
 import re
 
 # --- 1. AYARLAR ---
-st.set_page_config(page_title="Bütçe v50 (Final)", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Bütçe v51 (Stabil)", page_icon="🐦", layout="wide")
 
-# --- 2. PREMIUM TASARIM CSS ---
+# --- 2. CSS ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
@@ -27,25 +27,18 @@ st.markdown("""
         }
     }
 
-    /* ÜST BUTONLAR */
     .top-btn-container button {
         border: none !important; background-color: white !important;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1) !important; color: #555 !important;
         font-weight: 600 !important; padding: 0.5rem 1rem !important;
         border-radius: 8px !important; font-size: 1rem !important;
-        transition: all 0.2s ease-in-out !important; width: 100%;
-    }
-    .top-btn-container button:hover {
-        box-shadow: 0 4px 8px rgba(0,0,0,0.15) !important; transform: translateY(-2px) !important; color: #333 !important;
+        width: 100%;
     }
     .logout-btn button { color: #dc3545 !important; }
-    .logout-btn button:hover { background-color: #fff5f5 !important; }
 
-    /* FORM HİZALAMA */
     div[data-testid="stHorizontalBlock"] > div { display: flex; align-items: center; }
     .stRadio > div, [data-testid="stNumberInput"] { margin-top: 0 !important; }
 
-    /* KART TASARIMI */
     .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }
     @media (max-width: 768px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
     .kpi-card {
@@ -55,7 +48,6 @@ st.markdown("""
     .kpi-title { color: #999; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; margin-bottom: 5px; }
     .kpi-value { font-size: 1.4rem; font-weight: 800; margin: 0; }
 
-    /* PİYASA KUTUSU */
     .market-box {
         display: inline-flex; gap: 15px; background: white; padding: 10px 20px;
         border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
@@ -63,7 +55,6 @@ st.markdown("""
     }
     @media (max-width: 768px) { .market-box { width: 100%; justify-content: center; font-size: 0.85rem; padding: 8px; } }
     
-    /* GİRİŞ ALANLARI */
     .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
         border-radius: 10px !important; border: 1px solid #eee !important;
     }
@@ -82,6 +73,16 @@ RENK_NET = "#007bff"
 RENK_ODENMEMIS = "#ffc107"
 KOLONLAR = ["Tarih", "Kategori", "Tür", "Tutar", "Son Ödeme Tarihi", "Açıklama", "Durum"]
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+
+# --- YENİ: GÜVENLİ SAYI ÇEVİRİCİ (HATA ÖNLEYİCİ) ---
+def guvenli_int(deger):
+    """Gelen değer ne olursa olsun (boş, harf, nan) güvenli bir sayıya çevirir."""
+    try:
+        if pd.isna(deger) or str(deger).strip() == "":
+            return 0
+        return int(float(deger))
+    except:
+        return 0
 
 # --- BAĞLANTI ---
 def get_connection():
@@ -121,49 +122,38 @@ def kategorileri_cek(conn):
     except: return varsayilan
 
 def verileri_kaydet(conn, df):
-    # HATA ÖNLEYİCİ KAYIT FONKSİYONU
     try:
         save_df = df.copy()
-        # 1. Tarihleri String'e çevir (ValueError Önleyici)
-        # pd.to_datetime ile oluşan NaT değerlerini boş string yapar
         save_df["Tarih"] = save_df["Tarih"].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) else '')
         save_df["Son Ödeme Tarihi"] = save_df["Son Ödeme Tarihi"].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) else '')
-        
-        # 2. Sayısal Değerleri Garantiye Al
         save_df["Tutar"] = pd.to_numeric(save_df["Tutar"], errors='coerce').fillna(0.0)
-        
-        # 3. Boş değerleri temizle
         save_df = save_df.fillna("") 
-        
-        # 4. Sadece gerekli kolonları gönder
         for col in KOLONLAR:
             if col not in save_df.columns: save_df[col] = ""
-            
         conn.update(worksheet="Veriler", data=save_df[KOLONLAR])
     except Exception as e:
-        st.error(f"Kayıt sırasında hata oluştu: {e}")
+        st.error(f"Kayıt Hatası: {e}")
 
 def kategorileri_kaydet(conn, df): conn.update(worksheet="Kategoriler", data=df)
 
 def tarih_olustur(yil, ay_ismi, gun):
     try: 
         ay_index = AYLAR.index(ay_ismi) + 1
-        yil = int(yil) # Yılın sayı olduğundan emin ol
+        yil = int(yil)
     except: 
         ay_index = datetime.now().month
         yil = datetime.now().year
     
-    try: h_gun = int(float(gun))
-    except: h_gun = 1
+    h_gun = guvenli_int(gun) # HATA BURADAYDI, DÜZELTİLDİ
     if h_gun <= 0: h_gun = 1
     
     try: return date(yil, ay_index, h_gun)
     except ValueError: return date(yil, ay_index, 28)
 
 def son_odeme_hesapla(islem_tarihi, varsayilan_gun):
-    if not varsayilan_gun or varsayilan_gun == 0: return islem_tarihi
+    v_gun = guvenli_int(varsayilan_gun) # HATA BURADAYDI, DÜZELTİLDİ
+    if v_gun == 0: return islem_tarihi
     try:
-        v_gun = int(float(varsayilan_gun))
         return tarih_olustur(islem_tarihi.year, AYLAR[islem_tarihi.month-1], v_gun)
     except: return islem_tarihi
 
@@ -187,7 +177,7 @@ def etiketleri_analiz_et(df):
 if "giris_yapildi" not in st.session_state: st.session_state.giris_yapildi = False
 if "genel" not in st.secrets: st.session_state.giris_yapildi = True
 
-# --- GİRİŞ EKRANI ---
+# --- GİRİŞ ---
 if not st.session_state.giris_yapildi:
     st.markdown("<br><br>", unsafe_allow_html=True)
     with st.container(border=True):
@@ -206,7 +196,6 @@ else:
     df = verileri_cek(conn)
     df_kat = kategorileri_cek(conn)
 
-    # Veri Tipi Düzeltme
     if not df.empty:
         df["Tarih"] = pd.to_datetime(df["Tarih"], errors='coerce')
         df = df.dropna(subset=["Tarih"])
@@ -258,7 +247,6 @@ else:
         else: df_filt = df; secilen_yil = "Arama"; secilen_ay = "Arama"
     else:
         kelime = None
-        # Yıl Listesi (Integer olduğundan emin olalım)
         yil_list = sorted(df["Tarih"].dt.year.unique(), reverse=True) if not df.empty else []
         current_year = datetime.now().year
         if current_year not in yil_list: yil_list.insert(0, current_year)
@@ -275,7 +263,7 @@ else:
                 ay_no = AYLAR.index(secilen_ay) + 1
                 df_filt = df_filt[df_filt["Tarih"].dt.month == ay_no]
 
-    # 3. KOPYALAMA ARAÇLARI (DÜZELTİLDİ)
+    # 3. KOPYALAMA ARAÇLARI
     if not arama_modu and secilen_ay != "Tüm" and secilen_yil != "Tüm":
         with st.expander("🛠️ Kopyala / İndir"):
             ec1, ec2 = st.columns(2)
@@ -283,53 +271,33 @@ else:
             with ec2:
                 if st.button("⏮️ Geçen Ayı Kopyala", use_container_width=True):
                     try:
-                        # Seçilen Yıl ve Ay'ı Sayıya Çevir
                         hy = int(secilen_yil)
                         ha = AYLAR.index(secilen_ay) + 1
-                        
-                        # Geçen Ayı Hesapla
-                        if ha == 1: 
-                            ka = 12
-                            ky = hy - 1
-                        else: 
-                            ka = ha - 1
-                            ky = hy
-                        
-                        # Geçen ayın verilerini çek
+                        if ha == 1: ka = 12; ky = hy - 1
+                        else: ka = ha - 1; ky = hy
                         kdf = df[(df["Tarih"].dt.year == ky) & (df["Tarih"].dt.month == ka) & (df["Tür"] == "Gider")]
                         
                         if not kdf.empty:
                             kopya = []
                             for _, r in kdf.iterrows():
-                                # Kategoriye ait varsayılan günü bul
                                 kb = df_kat[df_kat["Kategori"] == r["Kategori"]]
                                 if not kb.empty:
-                                    try:
-                                        vg = int(float(kb.iloc[0]["VarsayilanGun"]))
-                                    except: vg = 1
-                                    
-                                    # Yeni tarihi oluştur (Seçili Yıl ve Ay ile)
+                                    # HATA BURADA ÇÖZÜLDÜ: guvenli_int kullanıyoruz
+                                    vg = guvenli_int(kb.iloc[0]["VarsayilanGun"])
                                     yt = tarih_olustur(hy, secilen_ay, vg)
                                     yso = son_odeme_hesapla(yt, vg)
-                                    
                                     kopya.append({
-                                        "Tarih": pd.to_datetime(yt),
-                                        "Kategori": r["Kategori"],
-                                        "Tür": "Gider",
-                                        "Tutar": float(r["Tutar"]),
-                                        "Son Ödeme Tarihi": yso,
-                                        "Açıklama": f"{r['Açıklama']} (Kopya)",
-                                        "Durum": False
+                                        "Tarih": pd.to_datetime(yt), "Kategori": r["Kategori"], "Tür": "Gider", 
+                                        "Tutar": float(r["Tutar"]), "Son Ödeme Tarihi": yso, 
+                                        "Açıklama": f"{r['Açıklama']} (Kopya)", "Durum": False
                                     })
-                            
                             if kopya:
                                 yeni_df = pd.concat([df, pd.DataFrame(kopya)], ignore_index=True)
                                 verileri_kaydet(conn, yeni_df)
                                 st.success(f"{len(kopya)} Kayıt Kopyalandı!"); time.sleep(1); st.rerun()
-                            else: st.warning("Sabit gider bulunamadı.")
+                            else: st.warning("Sabit gider yok.")
                         else: st.error("Geçen ayda veri yok.")
-                    except Exception as e:
-                        st.error(f"Hata: {e}")
+                    except Exception as e: st.error(f"Hata: {e}")
 
     st.write("")
 
@@ -387,10 +355,11 @@ else:
                 if st.button("KAYDET", type="primary", use_container_width=True):
                     if secilen_yil == "Tüm" or secilen_ay == "Tüm": st.error("Lütfen bir Yıl ve Ay seçin.")
                     elif ks and tug > 0:
+                        # HATA BURADA ÇÖZÜLDÜ: guvenli_int
                         vg = 0
                         if not df_kat.empty:
                             r = df_kat[df_kat["Kategori"]==ks]
-                            if not r.empty: vg = int(float(r.iloc[0]["VarsayilanGun"]))
+                            if not r.empty: vg = guvenli_int(r.iloc[0]["VarsayilanGun"])
                         kt = tarih_olustur(secilen_yil, secilen_ay, vg)
                         yeni = pd.DataFrame([{"Tarih": pd.to_datetime(kt), "Kategori": ks, "Tür": ts, "Tutar": float(tug), "Son Ödeme Tarihi": son_odeme_hesapla(kt, vg), "Açıklama": ac, "Durum": False}])
                         verileri_kaydet(conn, pd.concat([df, yeni], ignore_index=True)); st.success("Kaydedildi!"); time.sleep(0.5); st.rerun()
@@ -405,7 +374,7 @@ else:
             with c_g2: st.caption("Kategori"); st.plotly_chart(px.pie(sg, values="Tutar", names="Kategori", hole=0.5).update_layout(margin=dict(t=0,b=0,l=0,r=0), height=180, showlegend=False), use_container_width=True)
             edf = etiketleri_analiz_et(sg)
             if not edf.empty: st.caption("Etiketler"); st.plotly_chart(px.bar(edf, x="Etiket", y="Tutar").update_layout(height=200, showlegend=False), use_container_width=True)
-        else: st.info("Veri yok")
+        else: st.info("Gider verisi yok.")
 
     with t3:
         if not df_filt.empty:
@@ -415,10 +384,10 @@ else:
             if arama_modu: st.dataframe(edt, hide_index=True, use_container_width=True)
             else:
                 duz = st.data_editor(edt, column_config={"Durum": st.column_config.CheckboxColumn(default=False), "Tutar": st.column_config.NumberColumn(format="%.0f"), "Kategori": st.column_config.SelectboxColumn(options=df_kat["Kategori"].unique().tolist()), "Tür": st.column_config.SelectboxColumn(options=["Gider", "Gelir"])}, hide_index=True, use_container_width=True, num_rows="dynamic")
-                if st.button("💾 Kaydet", use_container_width=True):
+                if st.button("💾 Tabloyu Kaydet", use_container_width=True):
                     dfr = df.drop(df_filt.index); duz["Tarih"] = pd.to_datetime(duz["Tarih"])
                     verileri_kaydet(conn, pd.concat([dfr, duz], ignore_index=True)); st.success("Güncellendi."); st.rerun()
-        else: st.write("Boş")
+        else: st.write("Kayıt yok.")
 
     with t4:
         c1, c2 = st.columns(2)
