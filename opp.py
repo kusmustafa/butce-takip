@@ -6,9 +6,9 @@ import time
 import re
 
 # --- 1. AYARLAR ---
-st.set_page_config(page_title="Bütçe v52 (Final Fix)", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Bütçe v53", page_icon="🐦", layout="wide")
 
-# --- 2. TASARIM CSS (PREMIUM & RESPONSIVE) ---
+# --- 2. TASARIM CSS ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
@@ -122,26 +122,21 @@ def kategorileri_cek(conn):
     except: return varsayilan
 
 def verileri_kaydet(conn, df):
-    # --- DÜZELTİLMİŞ VE GÜVENLİ KAYIT FONKSİYONU ---
     try:
         save_df = df.copy()
-        
-        # 1. Tarihleri Önce Datetime'a Zorla, Sonra String Yap
-        # Bu yöntem, veri zaten string ise de, datetime ise de çalışır.
+        # Tarih formatlama
         save_df["Tarih"] = pd.to_datetime(save_df["Tarih"], errors='coerce')
         save_df["Tarih"] = save_df["Tarih"].dt.strftime('%Y-%m-%d').fillna("")
         
         save_df["Son Ödeme Tarihi"] = pd.to_datetime(save_df["Son Ödeme Tarihi"], errors='coerce')
         save_df["Son Ödeme Tarihi"] = save_df["Son Ödeme Tarihi"].dt.strftime('%Y-%m-%d').fillna("")
         
-        # 2. Tutar ve Diğerleri
+        # Sayı formatlama
         save_df["Tutar"] = pd.to_numeric(save_df["Tutar"], errors='coerce').fillna(0.0)
-        save_df = save_df.fillna("")
+        save_df = save_df.fillna("") 
         
-        # 3. Kolon Eşitleme
         for col in KOLONLAR:
             if col not in save_df.columns: save_df[col] = ""
-            
         conn.update(worksheet="Veriler", data=save_df[KOLONLAR])
     except Exception as e:
         st.error(f"Kayıt Hatası: {e}")
@@ -353,6 +348,7 @@ else:
         if arama_modu: st.warning("Aramayı kapatın")
         else:
             with st.container(border=True):
+                # Form Elemanları Hizalı
                 c_tur, c_kat, c_tut = st.columns([1, 1.5, 1])
                 with c_tur:
                     ts = st.radio("Tür", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
@@ -360,4 +356,66 @@ else:
                     kl = df_kat[df_kat["Tur"]==ts]["Kategori"].tolist() if not df_kat.empty else []
                     ks = st.selectbox("Kat.", kl, index=None, label_visibility="collapsed", placeholder="Kategori Seç...")
                 with c_tut:
-                    tug = st.number_input("Tutar", step=50.0, label_visibility="collapsed", placeholder="0
+                    # DÜZELTİLDİ: Placeholder kaldırıldı, value eklendi
+                    tug = st.number_input(
+                        "Tutar", 
+                        min_value=0.0, 
+                        step=50.0, 
+                        value=0.0,
+                        label_visibility="collapsed"
+                    )
+                ac = st.text_input("Not", placeholder="#etiket (Opsiyonel)")
+                
+                if st.button("KAYDET", type="primary", use_container_width=True):
+                    if secilen_yil == "Tüm" or secilen_ay == "Tüm": st.error("Lütfen bir Yıl ve Ay seçin.")
+                    elif ks and tug > 0:
+                        vg = 0
+                        if not df_kat.empty:
+                            r = df_kat[df_kat["Kategori"]==ks]
+                            if not r.empty: vg = guvenli_int(r.iloc[0]["VarsayilanGun"])
+                        kt = tarih_olustur(secilen_yil, secilen_ay, vg)
+                        yeni = pd.DataFrame([{"Tarih": pd.to_datetime(kt), "Kategori": ks, "Tür": ts, "Tutar": float(tug), "Son Ödeme Tarihi": son_odeme_hesapla(kt, vg), "Açıklama": ac, "Durum": False}])
+                        verileri_kaydet(conn, pd.concat([df, yeni], ignore_index=True)); st.success("Kaydedildi!"); time.sleep(0.5); st.rerun()
+                    else: st.warning("Tutar ve Kategori zorunludur.")
+
+    with t2:
+        if not df_filt.empty and "Gider" in df_filt["Tür"].values:
+            sg = df_filt[df_filt["Tür"]=="Gider"].copy()
+            sg["D"] = sg["Durum"].map({True:"Ödendi", False:"Bekliyor"})
+            c_g1, c_g2 = st.columns(2)
+            with c_g1: st.caption("Durum"); st.plotly_chart(px.pie(sg, values="Tutar", names="D", hole=0.5, color="D", color_discrete_map={"Ödendi":RENK_GELIR, "Bekliyor":RENK_GIDER}).update_layout(margin=dict(t=0,b=0,l=0,r=0), height=180, showlegend=False), use_container_width=True)
+            with c_g2: st.caption("Kategori"); st.plotly_chart(px.pie(sg, values="Tutar", names="Kategori", hole=0.5).update_layout(margin=dict(t=0,b=0,l=0,r=0), height=180, showlegend=False), use_container_width=True)
+            edf = etiketleri_analiz_et(sg)
+            if not edf.empty: st.caption("Etiketler"); st.plotly_chart(px.bar(edf, x="Etiket", y="Tutar").update_layout(height=200, showlegend=False), use_container_width=True)
+        else: st.info("Gider verisi yok.")
+
+    with t3:
+        if not df_filt.empty:
+            edt = df_filt.sort_values("Tarih", ascending=False).copy()
+            edt["Tarih"] = edt["Tarih"].dt.date
+            if "Son Ödeme Tarihi" in edt.columns: edt["Son Ödeme Tarihi"] = pd.to_datetime(edt["Son Ödeme Tarihi"], errors='coerce').dt.date
+            if arama_modu: st.dataframe(edt, hide_index=True, use_container_width=True)
+            else:
+                duz = st.data_editor(edt, column_config={"Durum": st.column_config.CheckboxColumn(default=False), "Tutar": st.column_config.NumberColumn(format="%.0f"), "Kategori": st.column_config.SelectboxColumn(options=df_kat["Kategori"].unique().tolist()), "Tür": st.column_config.SelectboxColumn(options=["Gider", "Gelir"])}, hide_index=True, use_container_width=True, num_rows="dynamic")
+                if st.button("💾 Tabloyu Kaydet", use_container_width=True):
+                    dfr = df.drop(df_filt.index); duz["Tarih"] = pd.to_datetime(duz["Tarih"])
+                    verileri_kaydet(conn, pd.concat([dfr, duz], ignore_index=True)); st.success("Güncellendi."); st.rerun()
+        else: st.write("Kayıt yok.")
+
+    with t4:
+        c1, c2 = st.columns(2)
+        with c1:
+            with st.form("ke"):
+                kt = st.radio("T", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
+                ka = st.text_input("Ad", label_visibility="collapsed", placeholder="Yeni Kategori")
+                kg = st.number_input("Gün", 0, 31, 0, label_visibility="collapsed")
+                if st.form_submit_button("Ekle"):
+                    gk = conn.read(worksheet="Kategoriler", ttl=0) if not df_kat.empty else df_kat
+                    if ka and ka not in gk["Kategori"].values:
+                        kategorileri_kaydet(conn, pd.concat([gk, pd.DataFrame([{"Kategori": ka, "Tur": kt, "VarsayilanGun": kg}])], ignore_index=True)); st.success("Eklendi."); st.rerun()
+        with c2:
+            if not df_kat.empty:
+                sk = st.selectbox("Sil", df_kat["Kategori"].tolist(), label_visibility="collapsed")
+                if st.button("Sil", type="primary", use_container_width=True):
+                    if sk in df["Kategori"].values: st.error("Kullanımda!")
+                    else: kategorileri_kaydet(conn, df_kat[df_kat["Kategori"]!=sk]); st.success("Silindi."); st.rerun()
