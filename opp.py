@@ -6,7 +6,7 @@ import time
 import re
 
 # --- 1. AYARLAR ---
-st.set_page_config(page_title="Bütçe v55 (Final Form)", page_icon="🐦", layout="wide")
+st.set_page_config(page_title="Bütçe v56", page_icon="🐦", layout="wide")
 
 # --- 2. TASARIM CSS ---
 st.markdown("""
@@ -36,7 +36,7 @@ st.markdown("""
     }
     .logout-btn button { color: #dc3545 !important; }
 
-    /* FORM HİZALAMA */
+    /* HİZALAMA */
     div[data-testid="stHorizontalBlock"] > div { display: flex; align-items: center; }
     .stRadio > div, [data-testid="stNumberInput"] { margin-top: 0 !important; }
 
@@ -63,12 +63,12 @@ st.markdown("""
         border-radius: 10px !important; border: 1px solid #eee !important;
     }
     
-    /* FORM BUTONU (KAYDET) */
+    /* FORM BUTONU */
     div[data-testid="stFormSubmitButton"] > button {
         background: linear-gradient(135deg, #ff4b4b, #ff6b6b) !important;
         border: none !important; box-shadow: 0 4px 10px rgba(255, 75, 75, 0.3) !important;
         font-weight: 700 !important; padding: 0.75rem !important; color: white !important;
-        width: 100% !important; /* Tam genişlik */
+        width: 100% !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -160,11 +160,26 @@ def tarih_olustur(yil, ay_ismi, gun):
     except ValueError: return date(yil, ay_index, 28)
 
 def son_odeme_hesapla(islem_tarihi, varsayilan_gun):
+    """
+    Kategorinin varsayılan ödeme gününe göre SONRAKİ ayın tarihini hesaplar.
+    Örn: İşlem Tarihi: 10 Ocak, Varsayılan Gün: 5 -> Sonuç: 5 Şubat
+    """
     v_gun = guvenli_int(varsayilan_gun)
     if v_gun == 0: return islem_tarihi
+    
+    # Bir sonraki ayı bul
+    next_month = islem_tarihi.month + 1
+    next_year = islem_tarihi.year
+    
+    if next_month > 12:
+        next_month = 1
+        next_year += 1
+        
     try:
-        return tarih_olustur(islem_tarihi.year, AYLAR[islem_tarihi.month-1], v_gun)
-    except: return islem_tarihi
+        return date(next_year, next_month, v_gun)
+    except ValueError:
+        # Şubat 30 gibi olmayan tarihler için ayın 28'ini döndür
+        return date(next_year, next_month, 28)
 
 def csv_indir(df): return df.to_csv(index=False).encode('utf-8')
 
@@ -353,10 +368,7 @@ else:
     with t1:
         if arama_modu: st.warning("Aramayı kapatın")
         else:
-            # --- FORM YAPISI (OTOMATİK TEMİZLİK İÇİN) ---
-            # clear_on_submit=True sayesinde KAYDET'e basınca form sıfırlanır.
             with st.form("giris_formu_main", clear_on_submit=True):
-                
                 c_tur, c_kat, c_tut = st.columns([1, 1.5, 1])
                 with c_tur:
                     ts = st.radio("Tür", ["Gider", "Gelir"], horizontal=True, label_visibility="collapsed")
@@ -368,7 +380,6 @@ else:
                 
                 ac = st.text_input("Not", placeholder="#etiket (Opsiyonel)")
                 
-                # Form Gönderme Butonu
                 submitted = st.form_submit_button("KAYDET")
                 
                 if submitted:
@@ -380,7 +391,8 @@ else:
                             r = df_kat[df_kat["Kategori"]==ks]
                             if not r.empty: vg = guvenli_int(r.iloc[0]["VarsayilanGun"])
                         kt = tarih_olustur(secilen_yil, secilen_ay, vg)
-                        yeni = pd.DataFrame([{"Tarih": pd.to_datetime(kt), "Kategori": ks, "Tür": ts, "Tutar": float(tug), "Son Ödeme Tarihi": son_odeme_hesapla(kt, vg), "Açıklama": ac, "Durum": False}])
+                        yso = son_odeme_hesapla(kt, vg) # Otomatik Sonraki Ay
+                        yeni = pd.DataFrame([{"Tarih": pd.to_datetime(kt), "Kategori": ks, "Tür": ts, "Tutar": float(tug), "Son Ödeme Tarihi": yso, "Açıklama": ac, "Durum": False}])
                         verileri_kaydet(conn, pd.concat([df, yeni], ignore_index=True))
                         st.toast("✅ Kaydedildi!"); time.sleep(0.5); st.rerun()
                     else: st.warning("Tutar ve Kategori zorunludur.")
